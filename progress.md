@@ -4,7 +4,7 @@
 - [x] Step 1 — Install all required tools (git, aws cli, kubectl, terraform, terragrunt, helm) ✅ 14:45 25/06/2026
 - [x] Step 2 — Verify AWS CLI identity ✅ 14:52 25/06/2026
 - [x] Step 3 — Create S3 bucket for Terraform remote state ✅ 14:54 25/06/2026
-- [x] Step 4 — Create DynamoDB table for state locking ✅ 15:01 25/06/2026
+- [x] Step 4 — ~~Create DynamoDB table for state locking~~ → Deleted in favour of S3 native lockfile (`use_lockfile = true`) ✅ 15:01 | Removed 16:32 25/06/2026
 - [x] Step 5 — Create ECR repository for Docker images ✅ 15:02 25/06/2026
 
 ### Phase 0 Summary
@@ -13,12 +13,15 @@ We set up everything needed before touching any real infrastructure. Installed a
 ---
 
 ## Phase 1 — Infrastructure (Terragrunt)
-- [ ] Step 1 — Write Terraform module: `vpc`
-- [ ] Step 2 — Write Terraform module: `eks`
-- [ ] Step 3 — Write Terraform module: `iam`
-- [ ] Step 4 — Write Terraform module: `addons`
-- [ ] Step 5 — Write Terragrunt configs for dev + prod
-- [ ] Step 6 — Deploy: vpc → eks → iam → addons
+- [x] Step 1 — Create folder structure in ProjectView-infra ✅ 17:45 25/06/2026
+- [x] Step 2 — Write root `terragrunt.hcl` ✅ 18:13 25/06/2026
+- [x] Step 3 — Write `env.hcl` for dev + prod ✅ 11:30 25/06/2026
+- [ ] Step 4 — Write `modules/vpc`
+- [ ] Step 5 — Write `modules/eks`
+- [ ] Step 6 — Write `modules/iam`
+- [ ] Step 7 — Write `modules/addons`
+- [ ] Step 8 — Write environment `terragrunt.hcl` files (dev + prod for each module)
+- [ ] Step 9 — Deploy: vpc → eks → iam → addons
 
 ## Phase 2 — Sample App + GitHub Actions CI
 - [ ] Step 1 — Write Python Flask app
