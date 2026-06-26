@@ -93,9 +93,48 @@ ProjectView/
 - Architecture diagram (HTML/SVG preferred)
 - Submit at least 1 business day before review session
 
+## Two Repos
+- `ProjectView` (this repo) — app, helm, gitops, CI pipeline
+- `ProjectView-infra` — Terraform modules + Terragrunt environments (local: `C:\Users\USER\ProjectView-infra`)
+
+## Docs Location
+All documentation lives in `ProjectView` (this repo) only:
+- `progress.md` — progress tracker with timestamps
+- `documentation.md` — step-by-step log of everything we did
+- `explanations.md` — technology and concept explanations
+
+**IMPORTANT:** Always update these files when working in `ProjectView-infra` too. Never let them go out of sync.
+
+## How to work on files together
+When writing any file:
+1. Explain what the file does and what each block means BEFORE writing it
+2. Wait for the user to ask questions — don't move on until they say ready
+3. Write the file with a comment on every line
+4. Review the full file together after writing
+5. Only move to the next file after the user confirms
+6. After the user understands a concept, add it to explanations.md
+
+## Branch & PR Workflow
+
+Every feature, bug fix, chore, or version update must follow this flow:
+
+### Branch naming
+Format: `type/short-description`
+Types: `feature`, `bug-fix`, `chore`, `version-update`
+Examples: `feature/vpc-module`, `bug-fix/eks-iam-role`, `chore/update-node-version`
+
+### Rules
+1. Never work directly on `main`
+2. Open a new branch before starting any work — announce the branch name to the user
+3. All work for that task stays on that branch only
+4. When work is complete, open a PR using the format in `.github/PRformat.md`
+5. Issue format for new issues is in `.github/issue-format.md`
+
 ## instructions to work
 - every command you write me on CLI, write below it what it does. if the command it important write why we need it now.
 - i want to learn! from this project. i need to know everything about it. so we will do it step-step so i can understand.
 - in the file "documentation" write every step we did, and why we did it. split it to infra, bug-fixes, app, workflow, gitops, and another category i you think is neccesary.
 - in the file "progress", mention the progress we done with date and time. make sure to do it.
+- in the file "explanations", add every technology or concept explained. do it automatically without being asked.
+- at the end of every phase, write a short summary paragraph in progress.md.
 
