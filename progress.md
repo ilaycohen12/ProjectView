@@ -23,7 +23,7 @@ We set up everything needed before touching any real infrastructure. Installed a
 - [x] Step 6 — Write Terraform module: `s3` (PDF storage bucket) ✅ 27/06/2026
 - [x] Step 7 — Write Terraform module: `global` (ECR + API key secret) ✅ 27/06/2026
 - [x] Step 8 — Write Terraform module: `addons` (ALB controller, ESO, ArgoCD, KEDA) ✅ 27/06/2026
-- [x] Step 9 — Deploy dev: vpc ✅ eks ✅ sqs ✅ s3 ✅ iam ✅ rds ✅ addons (in progress) 27/06/2026
+- [x] Step 9 — Deploy dev: vpc ✅ eks ✅ sqs ✅ s3 ✅ iam ✅ rds ✅ addons ✅ 27/06/2026
 - [ ] Step 10 — Deploy prod: same order
 - [ ] Step 11 — Import ECR into Terraform global module
 
