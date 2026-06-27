@@ -19,10 +19,11 @@ We set up everything needed before touching any real infrastructure. Installed a
 - [x] Step 2 — Write Terraform module: `eks` ✅ 26/06/2026
 - [x] Step 3 — Write Terraform module: `iam` (ALB controller + ESO + KEDA + worker roles) ✅ 26/06/2026
 - [x] Step 4 — Write Terraform module: `rds` ✅ 26/06/2026
-- [ ] Step 5 — Write Terraform resources: `sqs` (signed queue + free queue)
-- [ ] Step 6 — Write Terraform resource: `s3` bucket for PDF storage
-- [ ] Step 7 — Write Terraform module: `addons` (ALB controller, ESO, ArgoCD, KEDA)
-- [ ] Step 8 — Deploy: vpc → eks → iam → rds → sqs → s3 → addons
+- [x] Step 5 — Write Terraform module: `sqs` (signed queue + free queue) ✅ 27/06/2026
+- [x] Step 6 — Write Terraform module: `s3` bucket for PDF storage ✅ 27/06/2026
+- [x] Step 7 — Write Terraform module: `global` (ECR + API key secret) ✅ 27/06/2026
+- [x] Step 8 — Write Terraform module: `addons` (ALB controller, ESO, ArgoCD, KEDA) ✅ 27/06/2026
+- [ ] Step 9 — Deploy: global → vpc → eks → iam → rds → sqs → s3 → addons
 
 ## Phase 2 — Sample App + GitHub Actions CI
 - [ ] Step 1 — Write Python Flask web server (PDF submit endpoint + signed/unsigned routing)
