@@ -258,6 +258,17 @@ Must apply in this exact order due to dependency chain:
 - **Cause:** Kubernetes namespace deletion is not instant — it waits for all resources and finalizers to clean up. KEDA registers a custom API group (`external.metrics.k8s.io/v1beta1`) and when KEDA was deleted mid-install, the stale API registration blocked namespace deletion indefinitely.
 - **Fix:** Used `kubectl replace --raw /api/v1/namespaces/<name>/finalize` to forcefully clear the finalizers from all three stuck namespaces (argocd, external-secrets, keda).
 
+### Bug 9 — ALB controller missing EC2 permissions
+- **Error:** `not authorized to perform: ec2:CreateSecurityGroup` on the ALB controller role
+- **Cause:** Our custom IAM policy for the ALB controller only had `ec2:Describe*` (read-only). The controller also needs to create/delete security groups, authorize ingress/egress rules, and manage tags — all write operations we hadn't included.
+- **Fix:** Replaced the minimal policy with the full official AWS Load Balancer Controller policy, which includes all required EC2, ELB, WAF, Shield, and ACM permissions. Then re-applied the IAM module with `terragrunt apply`.
+
+### Bug 10 — Load balancer created as internal instead of internet-facing
+- **Error:** Browser couldn't reach the app — `ERR_CONNECTION_TIMED_OUT`
+- **Cause:** When you create a `type: LoadBalancer` service in EKS, the ALB controller defaults to `internal` scheme — meaning the load balancer is only reachable from inside the VPC, not from the internet.
+- **Fix:** Added the annotation `service.beta.kubernetes.io/aws-load-balancer-scheme=internet-facing` to the service. Annotations are key-value metadata on Kubernetes resources that tools like the ALB controller read to change their behavior. The public subnets already had the `kubernetes.io/role/elb=1` tag so the controller knew which subnets to use for the public-facing LB.
+- **Lesson:** Always annotate LoadBalancer services with the scheme explicitly — never rely on the default.
+
 ### Bug 5 — IAM applied before SQS and S3
 - **Error:** `Unknown variable` on `dependency.sqs.outputs.signed_queue_arn` in `dev/iam/terragrunt.hcl`
 - **Cause:** The IAM module references SQS and S3 dependency outputs. When those modules haven't been applied yet, their state files don't exist in S3, so Terragrunt can't resolve the outputs.
