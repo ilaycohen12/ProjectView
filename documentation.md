@@ -69,7 +69,39 @@ Updated throughout the build.
 
 ---
 
+## Phase 1 — Infrastructure Deploy Log
+
+### Deploy Order (dev environment)
+Applied in this order because of dependency chain — each module needs outputs from the previous one:
+
+1. **vpc** → creates VPC, subnets, NAT Gateway, subnet groups
+2. **eks** → creates control plane and node group (reads vpc subnet IDs)
+3. **sqs** → creates signed + free queues (no dependencies, but IAM depends on it)
+4. **s3** → creates PDF storage bucket (no dependencies, but IAM depends on it)
+5. **iam** → creates all IAM roles (reads eks OIDC ARN + sqs ARNs + s3 ARN)
+6. **rds** → creates Postgres instance (reads vpc subnet group + eks node security group)
+7. **addons** → installs 4 Helm charts (reads eks endpoint + iam role ARNs)
+
+**Why SQS and S3 before IAM?** The IAM module's KEDA role needs the SQS ARN and the worker role needs both SQS ARNs + the S3 ARN. These must exist in Terraform state before IAM can reference them. Running IAM before SQS/S3 causes Terragrunt to fail with "Unknown variable" because the dependency outputs don't exist yet in the state bucket.
+
+---
+
 ## Bug Fixes
 > Issues encountered and how they were resolved.
+
+### Bug 1 — `required_version` invalid in Terragrunt terraform block
+- **Error:** `Unsupported argument` on `required_version = ">= 1.10.0"` in `infra/terragrunt.hcl`
+- **Cause:** In Terragrunt, the `terraform {}` block only accepts `source`, `extra_arguments`, and hooks. `required_version` is a Terraform-native setting and belongs in a `.tf` file, not in `terragrunt.hcl`.
+- **Fix:** Moved `required_version` into the contents of the `generate "provider"` block so it gets written into the auto-generated `provider.tf` file inside each module.
+
+### Bug 2 — `remote_state` had no `generate` block
+- **Error:** `Found remote_state settings but no backend block in the Terraform code`
+- **Cause:** The `remote_state` block tells Terragrunt where to store state, but without a `generate` attribute Terragrunt doesn't know where to write the backend configuration. It expects the developer to manually add `terraform { backend "s3" {} }` in every module — which defeats the purpose of a root config.
+- **Fix:** Added `generate = { path = "backend.tf", if_exists = "overwrite" }` inside the `remote_state` block. Now Terragrunt auto-creates `backend.tf` in every module before running.
+
+### Bug 3 — Helm provider not declared in `required_providers`
+- **Error:** `Blocks of type "kubernetes" are not expected here` in `addons/main.tf`
+- **Cause:** The addons module uses the Helm provider with a `kubernetes {}` nested block for cluster authentication. Without declaring the Helm provider in `required_providers`, Terraform doesn't know its schema and rejects the block.
+- **Fix:** Added `infra/modules/addons/versions.tf` declaring `hashicorp/aws ~> 5.0` and `hashicorp/helm ~> 2.0` in `required_providers`.
 
 ---
