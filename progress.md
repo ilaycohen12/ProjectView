@@ -29,7 +29,8 @@ We set up everything needed before touching any real infrastructure. Installed a
 
 ## Phase 2 — Sample App + GitHub Actions CI
 - [x] Step 1 — Write Hello World Flask app + Dockerfile (test deployment) ✅ 27/06/2026
-- [ ] Step 2 — Write full Flask web server (PDF submit endpoint + signed/unsigned routing)
+- [x] Step 2 — Build + push image to ECR, deploy to EKS, verify in browser ✅ 27/06/2026
+- [ ] Step 3 — Write full Flask web server (PDF submit endpoint + signed/unsigned routing)
 - [ ] Step 3 — Write PDF worker — signed (reads signed queue, generates PDF, uploads to S3)
 - [ ] Step 4 — Write PDF worker — free (reads free queue, generates PDF, uploads to S3)
 - [ ] Step 5 — Write multi-stage Dockerfile (web server + worker share same image)
