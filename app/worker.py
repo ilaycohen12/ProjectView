@@ -6,18 +6,18 @@ import tempfile
 import boto3
 import psycopg2
 
-QUEUE_URL   = os.environ["QUEUE_URL"]
-QUEUE_TYPE  = os.environ["QUEUE_TYPE"]   # "signed" or "free"
-S3_BUCKET   = os.environ["S3_BUCKET"]
-DB_HOST     = os.environ["DB_HOST"]
-DB_NAME     = os.environ.get("DB_NAME", "projectview")
-DB_USER     = os.environ["DB_USER"]
+QUEUE_URL = os.environ["QUEUE_URL"]
+QUEUE_TYPE = os.environ["QUEUE_TYPE"]  # "signed" or "free"
+S3_BUCKET = os.environ["S3_BUCKET"]
+DB_HOST = os.environ["DB_HOST"]
+DB_NAME = os.environ.get("DB_NAME", "projectview")
+DB_USER = os.environ["DB_USER"]
 DB_PASSWORD = os.environ["DB_PASSWORD"]
 
 TABLE = "signed_jobs" if QUEUE_TYPE == "signed" else "free_jobs"
 
 sqs = boto3.client("sqs", region_name="us-east-1")
-s3  = boto3.client("s3",  region_name="us-east-1")
+s3 = boto3.client("s3", region_name="us-east-1")
 
 
 def get_db():
@@ -26,7 +26,7 @@ def get_db():
 
 def init_db():
     conn = get_db()
-    cur  = conn.cursor()
+    cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS free_jobs (
             job_id     TEXT PRIMARY KEY,
@@ -50,12 +50,12 @@ def init_db():
 
 
 def process(body, receipt_handle):
-    job_id       = body["job_id"]
+    job_id = body["job_id"]
     s3_input_key = body["s3_input_key"]
-    username     = body.get("username")
+    username = body.get("username")
 
     conn = get_db()
-    cur  = conn.cursor()
+    cur = conn.cursor()
 
     try:
         if QUEUE_TYPE == "signed":
@@ -81,7 +81,7 @@ def process(body, receipt_handle):
                 timeout=60,
             )
 
-            output_path  = os.path.join(tmpdir, f"{job_id}.pdf")
+            output_path = os.path.join(tmpdir, f"{job_id}.pdf")
             s3_output_key = f"outputs/{job_id}.pdf"
             s3.upload_file(output_path, S3_BUCKET, s3_output_key)
 
@@ -107,7 +107,7 @@ def poll():
     print(f"[worker] starting — type={QUEUE_TYPE} table={TABLE}")
     init_db()
     while True:
-        resp     = sqs.receive_message(QueueUrl=QUEUE_URL, MaxNumberOfMessages=1, WaitTimeSeconds=20)
+        resp = sqs.receive_message(QueueUrl=QUEUE_URL, MaxNumberOfMessages=1, WaitTimeSeconds=20)
         messages = resp.get("Messages", [])
         if not messages:
             continue
