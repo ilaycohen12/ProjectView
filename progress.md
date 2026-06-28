@@ -34,7 +34,7 @@ We set up everything needed before touching any real infrastructure. Installed a
 - [x] Step 4 — Write PDF worker (signed + free, LibreOffice conversion, S3 upload, RDS write) ✅ 28/06/2026
 - [x] Step 5 — Write multi-stage Dockerfile (LibreOffice + Python deps, web server + worker share same image) ✅ 28/06/2026
 - [x] Step 6 — Build + push full app image to ECR, verify in browser ✅ 28/06/2026
-- [ ] Step 7 — Write GitHub Actions CI pipeline (build → lint → push to ECR → update Helm values)
+- [x] Step 7 — Write GitHub Actions CI pipeline (build → lint → push to ECR → update image tag) ✅ 28/06/2026
 
 ## Phase 3 — Helm Chart
 - [ ] Step 1 — Write generic Helm chart (Deployment, Service, Ingress, ConfigMap, ExternalSecret, ScaledObject)

@@ -235,7 +235,37 @@ Three services share one Docker image, started with different commands in Kubern
 
 ## CI/CD Workflow
 
-> To be documented when GitHub Actions pipelines are written.
+### GitHub Actions CI Pipeline (Phase 2)
+
+File: `.github/workflows/ci.yml` — triggers on every push to `main`.
+
+**How authentication works (OIDC):**
+GitHub Actions authenticates to AWS without hardcoded keys. When the pipeline runs, GitHub issues a signed JWT token proving "I am the `ilaycohen12/ProjectView` repo on the `main` branch". AWS verifies this against the GitHub OIDC provider (`token.actions.githubusercontent.com`) and issues temporary credentials for the `github-actions-ci` IAM role. The role is locked to this exact repo and branch — a fork cannot assume it.
+
+**Pipeline steps in order:**
+
+| Step | What it does |
+|------|-------------|
+| Checkout | Clones the repo onto the runner machine |
+| Configure AWS credentials | OIDC authentication → temporary credentials for `github-actions-ci` role |
+| Login to ECR | Authenticates Docker to ECR using the AWS credentials |
+| Lint | Runs `flake8` against `app/` — pipeline stops here if any style errors |
+| Build and push | `docker build` tagged with git SHA + `:latest`, pushed to ECR |
+| Update image tag | `sed` replaces the image tag in `deploy-dev.yaml`, commits + pushes back to repo |
+| Rollout restart | `aws eks update-kubeconfig` + `kubectl rollout restart` all 3 deployments, waits 120s for health |
+
+**Required permissions in the workflow file:**
+- `id-token: write` — allows the workflow to request an OIDC token from GitHub
+- `contents: write` — allows the workflow to commit and push the updated image tag
+
+**IAM role (`github-actions-ci`) permissions:**
+- `ecr:GetAuthorizationToken` — authenticate Docker to ECR
+- ECR push permissions on `projectview-app` repository
+- `eks:DescribeCluster` — needed for `update-kubeconfig`
+- EKS access entry: `AmazonEKSClusterAdminPolicy` — allows `kubectl` commands on the cluster
+
+**Future change (Phase 3/4):**
+The "Update image tag" step will edit `values-dev.yaml` in the gitops repo instead of `deploy-dev.yaml`. ArgoCD will detect the change and deploy automatically — removing the need for the "Rollout restart" step entirely.
 
 ---
 
