@@ -1,4 +1,4 @@
-# ProjectView — DevOps Engineer Assessment
+# snaPDF — DevOps Engineer Assessment
 
 ## Project Goal
 Build a production-grade cloud infrastructure for a DevOps job interview assessment.
@@ -10,9 +10,9 @@ Demonstrate proficiency in IaC, Kubernetes, GitOps, CI/CD, and secrets managemen
 - Next: Phase 2 — full Flask PDF app + workers + GitHub Actions CI
 
 ## Three Repos
-- **ProjectView** — Flask app code, Dockerfile, CI pipeline, docs (this repo)
-- **ProjectView-infra** — Terraform modules + Terragrunt configs for dev/prod
-- **ProjectView-gitops** — Helm charts + ArgoCD apps (to be created in Phase 3/4)
+- **snaPDF** — Flask app code, Dockerfile, CI pipeline, docs (this repo)
+- **snaPDF-infra** — Terraform modules + Terragrunt configs for dev/prod
+- **snaPDF-gitops** — Helm charts + ArgoCD apps (to be created in Phase 3/4)
 
 ## Actual Architecture
 
@@ -25,12 +25,12 @@ Demonstrate proficiency in IaC, Kubernetes, GitOps, CI/CD, and secrets managemen
 
 ### Infrastructure (all in us-east-1)
 - **VPC** — 3-tier: public (ALB/NAT), private (EKS nodes), database (RDS)
-- **EKS** — cluster `projectview-dev`, t3.small nodes, min=1 max=3 desired=2
+- **EKS** — cluster `snapdf-dev`, t3.small nodes, min=1 max=3 desired=2
 - **RDS** — PostgreSQL 15, stores PDF job metadata (user, s3_key, status)
-- **SQS** — two queues: `projectview-dev-signed` and `projectview-dev-free`
+- **SQS** — two queues: `snapdf-dev-signed` and `snapdf-dev-free`
 - **S3** — private bucket for storing generated PDFs, served via presigned URLs
-- **ECR** — `projectview-app` repository, images tagged by git SHA
-- **Secrets Manager** — DB password + API key (`projectview/api-key`)
+- **ECR** — `snapdf-app` repository, images tagged by git SHA
+- **Secrets Manager** — DB password + API key (`snapdf/api-key`)
 - **IAM roles (IRSA)** — alb-controller, eso, keda, worker
 
 ### Addons (installed via Helm in addons Terragrunt module)
@@ -53,18 +53,18 @@ kubectl delete deployment hello
 kubectl delete svc hello
 
 # 2. Destroy all infrastructure
-cd C:\Users\USER\ProjectView-infra\infra\environments\dev
+cd C:\Users\USER\snaPDF-infra\infra\environments\dev
 terragrunt run-all destroy
 ```
 
 ### Startup (next day)
 ```bash
 # 1. Rebuild all infrastructure (~40 min)
-cd C:\Users\USER\ProjectView-infra\infra\environments\dev
+cd C:\Users\USER\snaPDF-infra\infra\environments\dev
 terragrunt run-all apply
 
 # 2. Reconnect kubectl
-aws eks update-kubeconfig --region us-east-1 --name projectview-dev
+aws eks update-kubeconfig --region us-east-1 --name snapdf-dev
 ```
 
 ## Key Decisions (summary)
@@ -85,12 +85,12 @@ aws eks update-kubeconfig --region us-east-1 --name projectview-dev
 - Update `progress.md` with dates after every completed step
 - Follow branch workflow: issue → branch (`type/description`) → PR → merge → tag if milestone
 - Never push directly to main for app code — always branch + PR
-- Infra hotfixes can go directly to main in ProjectView-infra
-- Tag versions on ProjectView repo only, not infra repo
+- Infra hotfixes can go directly to main in snaPDF-infra
+- Tag versions on snaPDF repo only, not infra repo
 
 ## AWS Account
 - Account ID: `086241318869`
 - Region: `us-east-1`
-- ECR URI: `086241318869.dkr.ecr.us-east-1.amazonaws.com/projectview-app`
-- State bucket: `projectview-tf-state-086241318869`
-- EKS cluster: `projectview-dev`
+- ECR URI: `086241318869.dkr.ecr.us-east-1.amazonaws.com/snapdf-app`
+- State bucket: `snapdf-tf-state-086241318869`
+- EKS cluster: `snapdf-dev`

@@ -12,7 +12,7 @@ FREE_QUEUE_URL = os.environ["FREE_QUEUE_URL"]
 S3_BUCKET = os.environ["S3_BUCKET"]
 API_KEY = os.environ["API_KEY"]
 DB_HOST = os.environ["DB_HOST"]
-DB_NAME = os.environ.get("DB_NAME", "projectview")
+DB_NAME = os.environ.get("DB_NAME", "snapdf")
 DB_USER = os.environ["DB_USER"]
 DB_PASSWORD = os.environ["DB_PASSWORD"]
 

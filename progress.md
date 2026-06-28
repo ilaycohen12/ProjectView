@@ -1,4 +1,4 @@
-# ProjectView — Progress Tracker
+# snaPDF — Progress Tracker
 
 ## Phase 0 — Bootstrap
 - [x] Step 1 — Install all required tools (git, aws cli, kubectl, terraform, terragrunt, helm) ✅ 14:45 25/06/2026

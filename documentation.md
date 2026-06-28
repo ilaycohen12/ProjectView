@@ -1,4 +1,4 @@
-# ProjectView — Documentation Log
+# snaPDF — Documentation Log
 
 A living document of every step and decision made in this project, explained in plain English.
 Updated throughout the build.
@@ -59,7 +59,7 @@ Updated throughout the build.
 
 ### 10. No Route 53 or CloudFront
 **Decision:** Skip DNS and CDN for now.
-**Why:** Route 53 requires a registered domain (~$12/year) and is only needed for a custom URL like `projectview.com`. CloudFront is a CDN for static assets — this project serves a dynamic API, so caching at the edge adds no value. The ALB URL works fine for a demo.
+**Why:** Route 53 requires a registered domain (~$12/year) and is only needed for a custom URL like `snapdf.com`. CloudFront is a CDN for static assets — this project serves a dynamic API, so caching at the edge adds no value. The ALB URL works fine for a demo.
 
 ### 11. Destroy everything when not working
 **Decision:** Run `terragrunt run-all destroy` at the end of each session.
@@ -102,19 +102,19 @@ Updated throughout the build.
 - **Verified with:** `aws sts get-caller-identity` → Account `086241318869`, user `admin`.
 
 ### S3 Bucket for Terraform State
-- **What:** Created `projectview-tf-state-086241318869` in `us-east-1` with versioning enabled.
+- **What:** Created `snapdf-tf-state-086241318869` in `us-east-1` with versioning enabled.
 - **Why:** Terraform state must live somewhere safe and shared. Local state only exists on your laptop — lose it, and Terraform loses track of all infrastructure. S3 keeps it safe and accessible from any machine.
 - **Why versioning:** A corrupted state file (from a failed apply mid-run) can be restored from the previous S3 version.
 - **Why account ID in bucket name:** S3 bucket names are globally unique across all AWS accounts worldwide.
 
 ### DynamoDB Table for State Locking
-- **What:** Created `projectview-tf-locks` table in `us-east-1`.
+- **What:** Created `snapdf-tf-locks` table in `us-east-1`.
 - **Why:** Without locking, two Terraform runs starting at the same time would both write to the state file and corrupt it. DynamoDB acts as a distributed lock — one run writes a lock entry, any other run waits until it's released.
 - **Note:** We now use S3 native locking (`use_lockfile = true`) — the DynamoDB table was created early but is no longer the active lock mechanism.
 
 ### ECR Repository
-- **What:** Created `projectview-app` ECR repository in `us-east-1`.
-- **URI:** `086241318869.dkr.ecr.us-east-1.amazonaws.com/projectview-app`
+- **What:** Created `snapdf-app` ECR repository in `us-east-1`.
+- **URI:** `086241318869.dkr.ecr.us-east-1.amazonaws.com/snapdf-app`
 - **Why:** ECR is the bridge between CI and the cluster. GitHub Actions builds the Docker image and pushes it here. EKS pulls from here when deploying. Images are tagged by git SHA (e.g. `:a3f9c12`) so every deployment is traceable to an exact commit.
 
 ### GitHub Workflow Setup
@@ -161,8 +161,8 @@ Creates a PostgreSQL 15 instance in the database subnet.
 
 #### `sqs`
 Creates two queues:
-- `projectview-dev-signed` — for signed (paying) users, KEDA-watched
-- `projectview-dev-free` — for free users, processed by 1 steady worker
+- `snapdf-dev-signed` — for signed (paying) users, KEDA-watched
+- `snapdf-dev-free` — for free users, processed by 1 steady worker
 - Both have 60s visibility timeout (message reappears for retry if worker crashes) and 1 hour retention
 
 #### `s3`
@@ -240,7 +240,7 @@ Three services share one Docker image, started with different commands in Kubern
 File: `.github/workflows/ci.yml` — triggers on every push to `main`.
 
 **How authentication works (OIDC):**
-GitHub Actions authenticates to AWS without hardcoded keys. When the pipeline runs, GitHub issues a signed JWT token proving "I am the `ilaycohen12/ProjectView` repo on the `main` branch". AWS verifies this against the GitHub OIDC provider (`token.actions.githubusercontent.com`) and issues temporary credentials for the `github-actions-ci` IAM role. The role is locked to this exact repo and branch — a fork cannot assume it.
+GitHub Actions authenticates to AWS without hardcoded keys. When the pipeline runs, GitHub issues a signed JWT token proving "I am the `ilaycohen12/snaPDF` repo on the `main` branch". AWS verifies this against the GitHub OIDC provider (`token.actions.githubusercontent.com`) and issues temporary credentials for the `github-actions-ci` IAM role. The role is locked to this exact repo and branch — a fork cannot assume it.
 
 **Pipeline steps in order:**
 
@@ -260,7 +260,7 @@ GitHub Actions authenticates to AWS without hardcoded keys. When the pipeline ru
 
 **IAM role (`github-actions-ci`) permissions:**
 - `ecr:GetAuthorizationToken` — authenticate Docker to ECR
-- ECR push permissions on `projectview-app` repository
+- ECR push permissions on `snapdf-app` repository
 - `eks:DescribeCluster` — needed for `update-kubeconfig`
 - EKS access entry: `AmazonEKSClusterAdminPolicy` — allows `kubectl` commands on the cluster
 
@@ -330,9 +330,9 @@ The "Update image tag" step will edit `values-dev.yaml` in the gitops repo inste
 - **Lesson:** Always annotate LoadBalancer services with the scheme explicitly — never rely on the default.
 
 ### Bug 11 — Pod using node IAM role instead of worker role (AccessDenied on S3)
-- **Error:** `AccessDenied` when calling `s3:PutObject` — the assumed role was `projectview-dev-nodes-eks-node-group-...` (the EC2 node role), not the worker role.
+- **Error:** `AccessDenied` when calling `s3:PutObject` — the assumed role was `snapdf-dev-nodes-eks-node-group-...` (the EC2 node role), not the worker role.
 - **Cause:** When a pod runs without a ServiceAccount annotated with an IAM role, it falls back to the IAM role of the EC2 node it's running on. The node role only has permissions to join the cluster and pull images — no S3 or SQS access.
-- **Fix:** Created a Kubernetes ServiceAccount (`pdf-worker-sa`) in the `dev` namespace annotated with `eks.amazonaws.com/role-arn: arn:aws:iam::086241318869:role/projectview-dev-worker`. Updated the Deployment to use `serviceAccountName: pdf-worker-sa`. AWS then injects temporary credentials for the worker role into the pod via a projected token volume.
+- **Fix:** Created a Kubernetes ServiceAccount (`pdf-worker-sa`) in the `dev` namespace annotated with `eks.amazonaws.com/role-arn: arn:aws:iam::086241318869:role/snapdf-dev-worker`. Updated the Deployment to use `serviceAccountName: pdf-worker-sa`. AWS then injects temporary credentials for the worker role into the pod via a projected token volume.
 - **Lesson:** Always attach a ServiceAccount with the correct IAM role to every pod that needs AWS access. Never rely on the node role for application-level permissions — it violates least-privilege and gives every pod on that node the same access.
 
 ### Bug 12 — Wrong ServiceAccount name in IAM trust policy

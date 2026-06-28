@@ -10,7 +10,7 @@ QUEUE_URL = os.environ["QUEUE_URL"]
 QUEUE_TYPE = os.environ["QUEUE_TYPE"]  # "signed" or "free"
 S3_BUCKET = os.environ["S3_BUCKET"]
 DB_HOST = os.environ["DB_HOST"]
-DB_NAME = os.environ.get("DB_NAME", "projectview")
+DB_NAME = os.environ.get("DB_NAME", "snapdf")
 DB_USER = os.environ["DB_USER"]
 DB_PASSWORD = os.environ["DB_PASSWORD"]
 
