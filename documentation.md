@@ -247,37 +247,127 @@ Three services share one Docker image, started with different commands in Kubern
 
 ## CI/CD Workflow
 
-### GitHub Actions CI Pipeline (Phase 2)
+### Phase 2 CI Pipeline (replaced in Phase 3)
 
-File: `.github/workflows/ci.yml` — triggers on every push to `main`.
+The original pipeline was a single workflow file (`.github/workflows/ci.yml`) that triggered on every push to `main`. It built one shared Docker image containing all services, pushed it to a single ECR repo (`snapdf-app`), then directly restarted Kubernetes pods using `kubectl rollout restart`. This was a working first version but had two problems — every push rebuilt everything even if only one service changed, and CI was directly touching the cluster instead of going through GitOps.
 
-**How authentication works (OIDC):**
-GitHub Actions authenticates to AWS without hardcoded keys. When the pipeline runs, GitHub issues a signed JWT token proving "I am the `ilaycohen12/snaPDF` repo on the `main` branch". AWS verifies this against the GitHub OIDC provider (`token.actions.githubusercontent.com`) and issues temporary credentials for the `github-actions-ci` IAM role. The role is locked to this exact repo and branch — a fork cannot assume it.
+---
 
-**Pipeline steps in order:**
+### Phase 3 CI Pipeline (current)
+
+In Phase 3 the CI was completely rearchitected. The single workflow was replaced with three separate workflows, one per microservice.
+
+#### Why separate workflows?
+
+Each microservice now has its own dedicated workflow file:
+- `.github/workflows/ci-api.yml`
+- `.github/workflows/ci-worker.yml`
+- `.github/workflows/ci-auth.yml`
+
+Each workflow only triggers when its own directory changes:
+```yaml
+on:
+  push:
+    paths:
+      - 'api/**'   # only this workflow cares about api/ changes
+```
+
+This means pushing a bug fix to `api/` only rebuilds the api image. The worker and auth images stay untouched. In Phase 2, every push rebuilt all services even if only one line changed.
+
+#### What each workflow does
+
+Every workflow follows the same sequence:
 
 | Step | What it does |
 |------|-------------|
-| Checkout | Clones the repo onto the runner machine |
-| Configure AWS credentials | OIDC authentication → temporary credentials for `github-actions-ci` role |
-| Login to ECR | Authenticates Docker to ECR using the AWS credentials |
-| Lint | Runs `flake8` against `app/` — pipeline stops here if any style errors |
-| Build and push | `docker build` tagged with git SHA + `:latest`, pushed to ECR |
-| Update image tag | `sed` replaces the image tag in `deploy-dev.yaml`, commits + pushes back to repo |
-| Rollout restart | `aws eks update-kubeconfig` + `kubectl rollout restart` all 3 deployments, waits 120s for health |
+| Checkout | Clones the repo onto GitHub's server |
+| AWS auth (OIDC) | Keyless authentication — GitHub proves its identity, AWS issues temporary credentials |
+| ECR login | Authenticates Docker to ECR using those credentials |
+| Lint | Runs `flake8` — stops the pipeline if any code style errors |
+| Unit tests | Runs `pytest` — stops the pipeline if any test fails |
+| Build + push | Builds the Docker image, tags it with the git SHA and `:latest`, pushes to that service's ECR repo |
+| Update gitops | Clones `snaPDF-gitops`, updates the image tag in the values file, pushes back |
 
-**Required permissions in the workflow file:**
-- `id-token: write` — allows the workflow to request an OIDC token from GitHub
-- `contents: write` — allows the workflow to commit and push the updated image tag
+The pipeline stops at any failing step — a broken test means no image gets built, no deployment happens.
 
-**IAM role (`github-actions-ci`) permissions:**
-- `ecr:GetAuthorizationToken` — authenticate Docker to ECR
-- ECR push permissions on `snapdf-app` repository
-- `eks:DescribeCluster` — needed for `update-kubeconfig`
-- EKS access entry: `AmazonEKSClusterAdminPolicy` — allows `kubectl` commands on the cluster
+#### Separate ECR repos per service
 
-**Future change (Phase 3/4):**
-The "Update image tag" step will edit `values-dev.yaml` in the gitops repo instead of `deploy-dev.yaml`. ArgoCD will detect the change and deploy automatically — removing the need for the "Rollout restart" step entirely.
+Each service now has its own ECR repository:
+- `snapdf-api` — Flask web server image (~200MB, no LibreOffice)
+- `snapdf-worker` — Worker image (~700MB, includes LibreOffice)
+- `snapdf-auth` — Auth service image (~150MB, placeholder for now)
+
+Previously one shared `snapdf-app` repo held everything. Separate repos mean each service has its own image history — you can see exactly which commits changed which service, and roll back one service independently of the others.
+
+#### The GitOps handoff — key difference from Phase 2
+
+In Phase 2, CI directly restarted pods:
+```
+CI → kubectl rollout restart → cluster
+```
+
+In Phase 3, CI never touches the cluster. Instead it updates a values file in the gitops repo:
+```
+CI → updates environments/dev/api-values.yaml (new image tag) → git push
+ArgoCD sees the change → runs helm upgrade → cluster updated
+```
+
+CI's job ends at the git push. ArgoCD takes over from there. This separation means the cluster's desired state always lives in git — you can see exactly what version is deployed by reading the values file.
+
+#### How environments work
+
+The same workflow file handles all three environments (dev, staging, prod) by checking which branch triggered it:
+
+```
+Push to main    → workflow runs → updates environments/dev/api-values.yaml
+Push to staging → workflow runs → updates environments/staging/api-values.yaml
+Push to prod    → workflow runs → updates environments/prod/api-values.yaml
+```
+
+**Promotion flow:**
+1. Developer pushes code to `main` → automatically deploys to dev
+2. When dev is verified, merge `main` into `staging` → automatically deploys to staging
+3. When staging is verified, merge `staging` into `prod` → ArgoCD shows out-of-sync, someone clicks Sync in the UI → deploys to prod
+
+Prod never deploys automatically — a human must approve it in the ArgoCD UI.
+
+#### Unit tests
+
+Each service has a `tests/` directory with pytest unit tests. Tests run in CI before the image is built — a failing test blocks the entire pipeline.
+
+Tests use mocks to replace real AWS calls (SQS, S3) and the database so they run in CI without any infrastructure:
+
+- `api/tests/test_app.py` — tests all Flask endpoints: file validation, queue routing (signed vs free), job status responses
+- `worker/tests/test_worker.py` — tests the `process()` function: happy path (insert pending → convert → mark done), failure path (S3 error → mark failed → still delete SQS message)
+- `auth/tests/test_main.py` — placeholder, real tests added when auth code is implemented
+
+#### Microservice restructure
+
+The app directory was reorganised from one flat folder into separate microservice directories:
+
+```
+Before (Phase 2):        After (Phase 3):
+app/                     api/
+  app.py                   app.py
+  worker.py                requirements.txt
+  Dockerfile               Dockerfile
+  requirements.txt         tests/
+                             test_app.py
+                         worker/
+                           worker.py
+                           requirements.txt
+                           Dockerfile
+                           tests/
+                             test_worker.py
+                         auth/
+                           main.py          ← placeholder
+                           requirements.txt
+                           Dockerfile
+                           tests/
+                             test_main.py
+```
+
+Each service has its own `requirements.txt` with only what it needs — the worker no longer has Flask as a dependency since it never serves HTTP traffic.
 
 ---
 
