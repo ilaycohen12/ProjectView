@@ -3,73 +3,90 @@ import uuid
 import json
 import boto3
 import psycopg2
+import jwt
 from flask import Flask, request, jsonify, render_template_string
 
 app = Flask(__name__)
 
 SIGNED_QUEUE_URL = os.environ["SIGNED_QUEUE_URL"]
-FREE_QUEUE_URL = os.environ["FREE_QUEUE_URL"]
-S3_BUCKET = os.environ["S3_BUCKET"]
-API_KEY = os.environ["API_KEY"]
-DB_HOST = os.environ["DB_HOST"]
-DB_NAME = os.environ.get("DB_NAME", "snapdf")
-DB_USER = os.environ["DB_USER"]
-DB_PASSWORD = os.environ["DB_PASSWORD"]
+FREE_QUEUE_URL   = os.environ["FREE_QUEUE_URL"]
+S3_BUCKET        = os.environ["S3_BUCKET"]
+JWT_SECRET       = os.environ.get("JWT_SECRET", "dev-secret-change-me")
+AUTH_URL         = os.environ.get("AUTH_URL", "")
+DB_HOST          = os.environ["DB_HOST"]
+DB_NAME          = os.environ.get("DB_NAME", "snapdf")
+DB_USER          = os.environ["DB_USER"]
+DB_PASSWORD      = os.environ["DB_PASSWORD"]
 
 sqs = boto3.client("sqs", region_name="us-east-1")
-s3 = boto3.client("s3", region_name="us-east-1")
+s3  = boto3.client("s3",  region_name="us-east-1")
 
 PAGE = """
 <!DOCTYPE html>
 <html>
 <head>
-  <title>PDF Converter</title>
+  <title>snaPDF — PDF Converter</title>
   <style>
     * { box-sizing: border-box; }
     body { font-family: sans-serif; max-width: 560px; margin: 80px auto; padding: 0 24px; color: #222; }
     h1 { font-size: 1.6rem; margin-bottom: 4px; }
     .sub { color: #666; margin-bottom: 32px; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; margin-bottom: 24px; }
+    .badge.signed { background: #d1fae5; color: #065f46; }
+    .badge.free   { background: #fef3c7; color: #92400e; }
     label { display: block; font-weight: 600; margin-bottom: 6px; }
-    .hint { font-weight: normal; color: #888; font-size: 0.85rem; }
-    input[type=file], input[type=text] {
-      display: block; width: 100%; padding: 9px 12px;
-      border: 1px solid #ccc; margin-bottom: 20px; font-size: 0.95rem;
-    }
-    button {
-      width: 100%; padding: 11px; background: #1a56db; color: #fff;
-      border: none; font-size: 1rem; cursor: pointer;
-    }
+    input[type=file] { display: block; width: 100%; padding: 9px 12px; border: 1px solid #ccc; margin-bottom: 20px; font-size: 0.95rem; }
+    button { width: 100%; padding: 11px; background: #1a56db; color: #fff; border: none; font-size: 1rem; cursor: pointer; }
     button:disabled { background: #888; cursor: default; }
     #result { margin-top: 24px; padding: 16px; background: #f5f5f5; display: none; line-height: 1.6; }
+    .login-link { text-align: center; margin-top: 20px; font-size: 0.9rem; color: #666; }
+    .login-link a { color: #1a56db; }
     a { color: #1a56db; }
   </style>
 </head>
 <body>
-  <h1>PDF Converter</h1>
+  <h1>snaPDF</h1>
   <p class="sub">Upload a Word document and receive a PDF.</p>
+
+  <div id="tier-badge"></div>
 
   <form id="form">
     <label>Word File (.docx)</label>
     <input type="file" id="file" accept=".docx" required>
-
-    <label>API Key <span class="hint">(optional — signed users get priority queue)</span></label>
-    <input type="text" id="apiKey" placeholder="Leave empty for free tier">
-
-    <label>Username <span class="hint">(required if using API key)</span></label>
-    <input type="text" id="username" placeholder="e.g. john">
-
     <button type="submit" id="btn">Convert to PDF</button>
   </form>
 
   <div id="result"></div>
+  <p class="login-link" id="login-hint"></p>
 
   <script>
-    const form   = document.getElementById('form');
-    const result = document.getElementById('result');
-    const btn    = document.getElementById('btn');
+    // Read JWT from ?token= URL param (set by auth service after login)
+    const params = new URLSearchParams(window.location.search);
+    const token  = params.get('token') || '';
 
-    form.addEventListener('submit', async (e) => {
+    const badge = document.getElementById('tier-badge');
+    const hint  = document.getElementById('login-hint');
+
+    if (token) {
+      // Decode payload (no verification — server verifies on submit)
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        badge.innerHTML = '<span class="badge signed">Signed in as ' + payload.sub + ' — Priority Queue</span>';
+      } catch(e) {
+        badge.innerHTML = '<span class="badge free">Free Tier</span>';
+      }
+    } else {
+      badge.innerHTML = '<span class="badge free">Free Tier</span>';
+      if ('{{ auth_url }}') {
+        hint.innerHTML = '<a href="{{ auth_url }}">Sign in for priority queue →</a>';
+      }
+    }
+
+    document.getElementById('form').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const btn    = document.getElementById('btn');
+      const result = document.getElementById('result');
+
       btn.disabled = true;
       btn.textContent = 'Uploading...';
       result.style.display = 'block';
@@ -79,10 +96,7 @@ PAGE = """
       data.append('file', document.getElementById('file').files[0]);
 
       const headers = {};
-      const apiKey  = document.getElementById('apiKey').value.trim();
-      const username = document.getElementById('username').value.trim();
-      if (apiKey)    headers['X-API-Key']  = apiKey;
-      if (username)  headers['X-Username'] = username;
+      if (token) headers['Authorization'] = 'Bearer ' + token;
 
       const res  = await fetch('/convert', { method: 'POST', headers, body: data });
       const json = await res.json();
@@ -93,8 +107,8 @@ PAGE = """
       if (!res.ok) { result.textContent = 'Error: ' + json.error; return; }
 
       const tier = json.queue === 'signed' ? 'Signed (priority)' : 'Free';
-      result.innerHTML = `Job submitted — <strong>${tier}</strong> queue<br>`
-        + `ID: <code>${json.job_id}</code><br><br>Checking status...`;
+      result.innerHTML = 'Job submitted — <strong>' + tier + '</strong> queue<br>'
+        + 'ID: <code>' + json.job_id + '</code><br><br>Checking status...';
       poll(json.job_id);
     });
 
@@ -102,9 +116,10 @@ PAGE = """
       const res  = await fetch('/jobs/' + jobId);
       const json = await res.json();
       if (json.status === 'done') {
-        result.innerHTML = 'Done! <a href="' + json.download_url + '" target="_blank">Download PDF</a>';
+        document.getElementById('result').innerHTML =
+          'Done! <a href="' + json.download_url + '" target="_blank">Download PDF</a>';
       } else if (json.status === 'failed') {
-        result.innerHTML = 'Conversion failed. Please try again.';
+        document.getElementById('result').innerHTML = 'Conversion failed. Please try again.';
       } else {
         setTimeout(() => poll(jobId), 3000);
       }
@@ -115,18 +130,27 @@ PAGE = """
 """
 
 
+def decode_jwt(token):
+    """Returns (username, tier) if valid, or (None, None) if invalid/missing."""
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        return payload.get("sub", "unknown"), payload.get("tier", "free")
+    except jwt.InvalidTokenError:
+        return None, None
+
+
 def get_db():
     return psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD, sslmode="require")
 
 
 @app.route("/")
 def index():
-    return render_template_string(PAGE)
+    return render_template_string(PAGE, auth_url=AUTH_URL)
 
 
 @app.route("/health")
 def health():
-    return {"status": "ok"}
+    return jsonify({"status": "ok"})
 
 
 @app.route("/convert", methods=["POST"])
@@ -138,16 +162,19 @@ def convert():
     if not file.filename.endswith(".docx"):
         return jsonify({"error": "only .docx files are supported"}), 400
 
-    api_key = request.headers.get("X-API-Key", "")
-    is_signed = api_key == API_KEY
-    job_id = str(uuid.uuid4())
+    # Determine tier from JWT
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header[len("Bearer "):] if auth_header.startswith("Bearer ") else ""
+    username, tier = decode_jwt(token)
+    is_signed = tier == "signed"
 
+    job_id = str(uuid.uuid4())
     s3_input_key = f"uploads/{job_id}.docx"
     s3.upload_fileobj(file, S3_BUCKET, s3_input_key)
 
     message = {"job_id": job_id, "s3_input_key": s3_input_key}
     if is_signed:
-        message["username"] = request.headers.get("X-Username", "unknown")
+        message["username"] = username
 
     queue_url = SIGNED_QUEUE_URL if is_signed else FREE_QUEUE_URL
     sqs.send_message(QueueUrl=queue_url, MessageBody=json.dumps(message))
@@ -158,7 +185,7 @@ def convert():
 @app.route("/jobs/<job_id>")
 def job_status(job_id):
     conn = get_db()
-    cur = conn.cursor()
+    cur  = conn.cursor()
 
     row = None
     for table in ("signed_jobs", "free_jobs"):
