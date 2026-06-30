@@ -47,22 +47,35 @@ We set up everything needed before touching any real infrastructure. Installed a
 - [x] Step 8 — Fix destroy script — handle LBs, ENIs, security groups, subnets, --lock=false ✅ 30/06/2026
 
 ## Phase 4 — GitOps (ArgoCD)
-- [ ] Step 1 — Add Nginx Ingress Controller to Terraform addons module
-- [ ] Step 2 — Delete apps/nginx-app.yaml from snaPDF-gitops (Nginx moved to Terraform)
-- [ ] Step 3 — Fill in apps/eso-appset.yaml — ApplicationSet deploying ClusterSecretStore per cluster
-- [ ] Step 4 — Fill in apps/services-appset.yaml — ApplicationSet generating one app per service per env
-- [ ] Step 5 — Write infra/bootstrap/root-app.yaml in snaPDF-infra — root ArgoCD Application pointing at snaPDF-gitops/apps/
-- [ ] Step 6 — Apply dev infra: terragrunt run-all apply in environments/dev
-- [ ] Step 7 — Reconnect kubectl to dev: aws eks update-kubeconfig --region us-east-1 --name snapdf-dev
-- [ ] Step 8 — Apply root app: kubectl apply -f infra/bootstrap/root-app.yaml (one-time bootstrap)
-- [ ] Step 9 — Apply prod infra: terragrunt run-all apply in environments/prod
-- [ ] Step 10 — Reconnect kubectl to prod: aws eks update-kubeconfig --region us-east-1 --name snapdf-prod
-- [ ] Step 11 — Register prod cluster with ArgoCD: argocd cluster add
-- [ ] Step 12 — Configure ArgoCD webhook — instant sync on snaPDF-gitops push
-- [ ] Step 13 — Verify full GitOps flow end to end
+- [x] Step 1 — Add Nginx Ingress Controller to Terraform addons module ✅ 30/06/2026
+- [x] Step 2 — Write eso-appset.yaml, services-appset.yaml, root-app.yaml ✅ 30/06/2026
+- [x] Step 3 — Deploy dev infra and bootstrap ArgoCD with root app ✅ 30/06/2026
+- [x] Step 4 — Fix Helm chart: add ESO property field + envFrom to deployment ✅ 30/06/2026
+- [x] Step 5 — Fix IRSA trust policy for worker service accounts (wildcard) ✅ 30/06/2026
+- [x] Step 6 — Fix ingress rewrite-target (path prefix stripping) ✅ 30/06/2026
+- [x] Step 7 — Populate staging values files with env vars and ESO secrets ✅ 30/06/2026
+- [x] Step 8 — Fix JavaScript fetch paths and HTML form actions for path routing ✅ 30/06/2026
+- [x] Step 9 — Fix curly quote encoding bug in Python source files ✅ 30/06/2026
+- [x] Step 10 — Verify full end-to-end flow: signup → upload → convert → download ✅ 30/06/2026
+- [ ] Step 11 — Apply prod infra: terragrunt run-all apply in environments/prod
+- [ ] Step 12 — Register prod cluster with ArgoCD: argocd cluster add
+- [ ] Step 13 — Configure ArgoCD webhook — instant sync on snaPDF-gitops push
 
-## Phase 5 — Documentation & Diagram
+### Phase 4 Summary
+ArgoCD is fully operational managing 8 applications (4 services × dev + staging). The complete user flow works end-to-end: sign up on /auth → upload .docx on /api → worker picks up from SQS → converts with LibreOffice → stores in S3 → user downloads PDF via presigned URL. Key fixes included: ESO ExternalSecret property field rendering, pod envFrom injection, IRSA trust policy wildcard for service accounts, nginx rewrite-target for path-based routing, JavaScript URL prefixing, and replacing curly smart quotes that were breaking JS in the browser.
+
+## Phase 5 — Observability (Prometheus + Grafana)
+- [ ] Step 1 — Install kube-prometheus-stack via Helm (Prometheus + Grafana + Alertmanager)
+- [ ] Step 2 — Create Grafana dashboard: pod CPU/memory, SQS queue depth, conversion rate
+- [ ] Step 3 — Add KEDA ScaledObject metrics to Grafana (signed worker replica count)
+
+## Phase 6 — Karpenter
+- [ ] Step 1 — Install Karpenter via Helm, replace managed node group
+- [ ] Step 2 — Write NodePool and EC2NodeClass manifests
+- [ ] Step 3 — Verify nodes provision and deprovision based on pod demand
+
+## Phase 7 — Documentation & Diagram
 - [x] Step 1 — Create architecture diagram (HTML) ✅ 26/06/2026
-- [ ] Step 2 — Update architecture diagram with KEDA + SQS + S3 + workers
+- [ ] Step 2 — Update architecture diagram with KEDA + SQS + S3 + workers + Prometheus
 - [ ] Step 3 — Write README (setup, decisions, limitations)
 - [ ] Step 4 — Final review of documentation.md

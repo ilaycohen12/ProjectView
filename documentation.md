@@ -29,9 +29,9 @@ Updated throughout the build.
 **Decision:** Use `use_lockfile = true` in the S3 backend config (Terraform 1.10+) instead of a DynamoDB table.
 **Why:** DynamoDB locking requires creating and managing a separate AWS resource. S3 native locking does the same thing with a `.tflock` file in the same bucket — no extra resource needed. We still created the DynamoDB table from the old approach, but the active lock mechanism is S3-native.
 
-### 3. t3.small nodes for EKS
-**Decision:** Use `t3.small` EC2 instances (2 vCPU, 2GB RAM) for the EKS node group.
-**Why:** Cost. t3.small is ~$15/month per node. The cluster runs 2 nodes by default and scales to 3 max. This is enough for the demo app, 4 addon pods (ALB controller, ESO, ArgoCD, KEDA), and 2 worker pods. For a real production workload we'd use t3.medium or larger.
+### 3. t3.medium nodes for EKS
+**Decision:** Use `t3.medium` EC2 instances (2 vCPU, 4GB RAM) for the EKS node group, 2 nodes desired.
+**Why:** Started with t3.small (2GB RAM) but hit memory pressure running 4 addon pods + 4 app pods concurrently. t3.medium doubles the RAM per node, giving comfortable headroom. Started with 3x t3.small as an interim workaround while the AWS account was restricted to Free Tier instance types — once the account was upgraded, reverted to 2x t3.medium which is the right balance of cost and capacity.
 
 ### 4. Two SQS queues (signed + free) instead of one
 **Decision:** Create two separate SQS queues — one for signed (paying) users and one for free users.
@@ -607,7 +607,73 @@ No manual `kubectl` in production. Git is the single source of truth.
 
 ## Secrets
 
-> To be documented when ESO ClusterSecretStore and ExternalSecret are configured.
+### How secrets flow from AWS to pods
+
+1. **AWS Secrets Manager** stores the actual secret values (DB password, JWT secret)
+2. **ESO ClusterSecretStore** tells ESO how to connect to Secrets Manager (which IAM role to use)
+3. **ExternalSecret** (one per service) tells ESO which secrets to pull and what to name the resulting K8s Secret
+4. **Kubernetes Secret** is created by ESO — a native K8s secret in the same namespace as the pods
+5. **Pod** receives the secrets as environment variables via `envFrom: - secretRef:`
+
+The app code reads `os.environ["DB_HOST"]` — it has no idea secrets came from Secrets Manager. ESO is the bridge.
+
+### Secret names in Secrets Manager
+
+| Secret path | Contents | Used by |
+|---|---|---|
+| `snapdf/db-credentials` | JSON: `{"host":"...","username":"...","password":"..."}` | api, auth, both workers |
+| `snapdf/jwt-secret` | Plain string — the JWT signing key | api, auth |
+
+The DB credentials secret is stored as JSON so ESO can extract individual fields using the `property` field in the ExternalSecret `remoteRef`. Example: `property: host` extracts just the host value from the JSON into a K8s Secret key named `DB_HOST`.
+
+---
+
+## Phase 4 — GitOps (ArgoCD) — Completed
+
+### What was built
+
+The full GitOps flow is running. Here is what ArgoCD manages:
+
+- **dev namespace** — api-dev, auth-dev, free-worker-dev, signed-worker-dev
+- **staging namespace** — api-staging, auth-staging, free-worker-staging, signed-worker-staging
+
+ArgoCD polls the snaPDF-gitops repo every 3 minutes and applies any changes automatically.
+
+### End-to-end app flow (working as of 30/06/2026)
+
+```
+1. User visits /auth → signs up → JWT issued → redirected to /api?token=...
+2. User uploads .docx → POST /api/convert → JWT validated
+3. File uploaded to S3 (uploads/<job_id>.docx)
+4. Job message sent to SQS (signed queue for authenticated users, free queue otherwise)
+5. Worker pod picks up message → downloads .docx from S3 → converts to PDF via LibreOffice
+6. PDF uploaded to S3 (outputs/<job_id>.pdf)
+7. Job marked done in RDS
+8. User polls GET /api/jobs/<job_id> → receives presigned S3 URL → downloads PDF
+```
+
+### Path-based ingress routing
+
+Both services (api, auth) are served from a single ALB URL on different paths:
+- `/api/*` → api pods
+- `/auth/*` → auth pods
+
+Nginx ingress uses `rewrite-target` to strip the prefix before forwarding to the pod:
+```yaml
+nginx.ingress.kubernetes.io/rewrite-target: /$2
+nginx.ingress.kubernetes.io/use-regex: "true"
+path: /api(/|$)(.*)
+pathType: ImplementationSpecific
+```
+Without rewrite, Flask would receive `/api/convert` and return 404 (it only knows `/convert`). The rewrite strips `/api` so Flask receives `/convert`.
+
+**Important:** URLs hardcoded in the app's JavaScript (e.g. `fetch('/convert', ...)`) must use the full public path (`fetch('/api/convert', ...)`), not the Flask-internal path. The rewrite only happens server-side in nginx — the browser does not see it.
+
+### Staging vs dev path conflict
+
+Both dev and staging environments use the same nginx ingress controller. Since both use the same paths (`/api`, `/auth`), nginx can only route to one of them — whichever ingress object it sees first "wins." This caused the staging pod (running an old image) to intercept traffic meant for dev.
+
+**Fix:** Keep staging image tags pinned to the same fixed SHA as dev, so even if staging intercepts traffic, the user sees the correct version. Long-term solution is host-based routing (different subdomains per env) which requires a real domain name.
 
 ---
 
@@ -703,6 +769,48 @@ No manual `kubectl` in production. Git is the single source of truth.
 - **Cause:** When we copied the RDS password from Secrets Manager output, the last character (`t`) was cut off. The password in `deploy-dev.yaml` was `...Y(` instead of `...Y(t`.
 - **Fix:** Re-fetched the password from Secrets Manager, spotted the missing character, updated `deploy-dev.yaml`.
 - **Lesson:** This is exactly why we use External Secrets Operator — ESO pulls the latest secret value from Secrets Manager automatically. Hardcoding secrets in YAML means any rotation or typo breaks the app and requires a manual fix.
+
+### Bug 16 — EKS node group stuck in CREATE_FAILED (Free Tier restriction)
+- **Error:** `InvalidParameterCombination: Instance type t3.medium is not eligible for the Free Tier`
+- **Cause:** AWS billing-level restriction — not an IAM or quota issue. The account had a Free Tier restriction that blocked Auto Scaling Groups from launching non-Free-Tier instance types. t3.micro and t3.small are Free Tier eligible; t3.medium is not.
+- **Fix:** Upgraded the AWS account plan to remove the Free Tier instance restriction. Also had to manually delete the stuck CREATE_FAILED node group via `aws eks delete-nodegroup` before Terraform could recreate it.
+- **Lesson:** Free Tier restrictions operate at the billing level, invisible to IAM/SCP policies. A quota increase does not help — the account plan itself must be upgraded.
+
+### Bug 17 — ESO not extracting individual fields from JSON secret
+- **Error:** `key host does not exist in secret snapdf/db-credentials`
+- **Cause:** Two problems combined. First, the secret in Secrets Manager was stored as invalid JSON (`{host:...,username:...}` — unquoted keys). ESO requires valid JSON to use the `property` field. Second, the Helm chart ExternalSecret template didn't include the `property` field at all — it was defined in values but never rendered.
+- **Fix:** (1) Updated the secret in Secrets Manager to valid JSON `{"host":"...","username":"...","password":"..."}` using Bash (PowerShell stripped the quotes). (2) Added `{{- if .property }}` conditional rendering to the ExternalSecret template.
+- **Lesson:** ESO's `property` field only works with valid JSON. PowerShell's argument parsing strips quotes from JSON strings passed to the AWS CLI — always use Bash for this.
+
+### Bug 18 — Pods not receiving secrets from ESO (missing envFrom)
+- **Error:** `KeyError: 'DB_HOST'` — Python could not find the env var despite ESO creating the Secret
+- **Cause:** The Helm chart deployment template had no `envFrom` block. ESO was creating the Kubernetes Secret correctly, but nothing mounted it into the pod as environment variables.
+- **Fix:** Added `envFrom: - secretRef:` to the deployment template, conditional on `eso.enabled` and secrets being defined.
+- **Lesson:** ESO creates a Kubernetes Secret — it doesn't automatically inject it into pods. The pod spec must explicitly reference the secret via `envFrom` or `env.valueFrom.secretKeyRef`.
+
+### Bug 19 — IRSA trust policy service account name mismatch
+- **Error:** `AccessDenied: Not authorized to perform: sts:AssumeRoleWithWebIdentity`
+- **Cause:** The IAM trust policy for the worker role referenced `pdf-worker-sa` (the old service account name from Phase 2). The Helm chart creates service accounts named `free-worker-dev-sa` and `signed-worker-dev-sa`. The names didn't match so AWS refused to issue credentials.
+- **Fix:** Updated the trust policy to use `StringLike` with a wildcard: `system:serviceaccount:dev:*-worker-*`. This covers all current and future worker service account names without needing exact matches.
+- **Lesson:** IRSA requires an exact match between the trust policy's service account reference and the actual K8s ServiceAccount name + namespace. Use `StringLike` with wildcards when service account names follow a pattern.
+
+### Bug 20 — Ingress returning 404 (missing rewrite-target)
+- **Error:** Visiting `/api` in browser returned Flask 404
+- **Cause:** The Nginx ingress had no `rewrite-target` annotation. Nginx forwarded the full path `/api` to Flask. Flask only knows the route `/` — it has no route called `/api` — so it returned 404.
+- **Fix:** Added `nginx.ingress.kubernetes.io/rewrite-target: /$2` with `use-regex: true` and `pathType: ImplementationSpecific`, with path pattern `/api(/|$)(.*)`. Nginx now strips the `/api` prefix before forwarding to Flask.
+- **Lesson:** When using path-based routing (one ALB serving multiple services at `/api`, `/auth`, etc.), the ingress must strip the prefix before the request reaches the app. The app only knows its own internal routes.
+
+### Bug 21 — JavaScript fetch calls used wrong paths after ingress path routing
+- **Error:** Clicking "Convert" caused the page to reload (form submitted as GET) instead of uploading
+- **Cause:** The Flask page served JavaScript that called `fetch('/convert', ...)` and `fetch('/jobs/' + jobId)` — absolute paths without the `/api` prefix. The browser sent these to the ALB as `/convert` and `/jobs/...` which didn't match any ingress rule (404). When `fetch` got a 404 HTML response and tried to parse it as JSON, it threw an exception — and because there was no try/catch, the event listener crashed silently, leaving the form to submit normally (page reload).
+- **Fix:** Changed all fetch calls in the Flask HTML template to use the full public paths: `/api/convert` and `/api/jobs/...`. Also changed HTML form `action` attributes in auth to use `/auth/login` and `/auth/signup`.
+- **Lesson:** After adding an ingress prefix, update every URL in the app's frontend code. The rewrite only happens inside nginx — the browser always sees the full public path.
+
+### Bug 22 — Curly quotes in Python source files breaking JavaScript
+- **Error:** JS syntax error in browser — convert button did nothing; form submitted as page reload
+- **Cause:** Python source files (app.py, main.py) had curly/smart quotes (`"` `"` `'` `'`) and a UTF-8 BOM, likely introduced by a text editor or copy-paste. Python itself was fine (curly quotes are valid inside string literals), but the quotes were embedded in JavaScript code inside the HTML template strings. Browsers parse JS strictly — curly single quotes are not valid string delimiters in JavaScript, causing a SyntaxError that silently killed the entire script block.
+- **Fix:** Wrote a Python script to replace all curly quotes with straight ASCII equivalents, removed the BOM, and replaced any broken f-strings that had their `?` characters eaten by the replacement.
+- **Lesson:** Always use ASCII straight quotes in code. Smart quotes look identical in most editors but break parsers. Add `<meta charset="UTF-8">` to all HTML pages to ensure the browser interprets the encoding correctly.
 
 ### Bug 5 — IAM applied before SQS and S3
 - **Error:** `Unknown variable` on `dependency.sqs.outputs.signed_queue_arn` in `dev/iam/terragrunt.hcl`
