@@ -1,4 +1,4 @@
-﻿import os
+import os
 import datetime
 # testing
 import bcrypt
@@ -38,11 +38,11 @@ def init_db():
     conn.close()
 
 
-LOGIN_PAGE = “””
+LOGIN_PAGE = """
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset=”UTF-8”>
+  <meta charset="UTF-8">
   <title>snaPDF &mdash; Sign In</title>
   <style>
     * { box-sizing: border-box; }
@@ -81,7 +81,7 @@ SIGNUP_PAGE = """
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset=”UTF-8”>
+  <meta charset="UTF-8">
   <title>snaPDF &mdash; Create Account</title>
   <style>
     * { box-sizing: border-box; }
@@ -109,7 +109,7 @@ SIGNUP_PAGE = """
     <input type="password" name="confirm" required minlength="6">
     <button type="submit">Create Account</button>
   </form>
-  <p class="links">Already have an account? <a href="/auth">Sign in</a></p>
+  <p class="links">Already have an account" <a href="/auth">Sign in</a></p>
 </body>
 </html>
 """
@@ -184,7 +184,7 @@ def _issue_jwt_redirect(username):
         JWT_SECRET,
         algorithm="HS256",
     )
-    return redirect(f"{API_URL}?token={token}")
+    return redirect(f"{API_URL}"token={token}")
 
 
 @app.route("/verify", methods=["POST"])
@@ -209,7 +209,7 @@ with app.app_context():
     try:
         init_db()
     except Exception:
-        pass  # DB may not be available at startup in dev ג€” worker retries on first request
+        pass  # DB may not be available at startup in dev -- worker retries on first request
 
 
 if __name__ == "__main__":
