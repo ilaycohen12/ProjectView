@@ -1,4 +1,4 @@
-﻿import os
+import os
 import uuid
 import json
 import boto3
@@ -25,8 +25,8 @@ PAGE = """
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset=”UTF-8”>
-  <title>snaPDF — PDF Converter</title>
+  <meta charset="UTF-8">
+  <title>snaPDF -- PDF Converter</title>
   <style>
     * { box-sizing: border-box; }
     body { font-family: sans-serif; max-width: 560px; margin: 80px auto; padding: 0 24px; color: #222; }
@@ -69,17 +69,17 @@ PAGE = """
     const hint  = document.getElementById('login-hint');
 
     if (token) {
-      // Decode payload (no verification — server verifies on submit)
+      // Decode payload (no verification -- server verifies on submit)
       try {
-        const payload = JSON.parse(atob(token.split(‘.’)[1]));
-        badge.innerHTML = ‘<span class=”badge signed”>Signed in as ‘ + payload.sub + ‘ &mdash; Priority Queue</span>’;
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        badge.innerHTML = '<span class="badge signed">Signed in as ' + payload.sub + ' &mdash; Priority Queue</span>';
       } catch(e) {
-        badge.innerHTML = ‘<span class=”badge free”>Free Tier</span>’;
+        badge.innerHTML = '<span class="badge free">Free Tier</span>';
       }
     } else {
-      badge.innerHTML = ‘<span class=”badge free”>Free Tier</span>’;
-      if (‘{{ auth_url }}’) {
-        hint.innerHTML = ‘<a href=”{{ auth_url }}”>Sign in for priority queue &rarr;</a>’;
+      badge.innerHTML = '<span class="badge free">Free Tier</span>';
+      if ('{{ auth_url }}') {
+        hint.innerHTML = '<a href="{{ auth_url }}">Sign in for priority queue &rarr;</a>';
       }
     }
 
@@ -108,7 +108,7 @@ PAGE = """
       if (!res.ok) { result.textContent = 'Error: ' + json.error; return; }
 
       const tier = json.queue === 'signed' ? 'Signed (priority)' : 'Free';
-      result.innerHTML = 'Job submitted ג€” <strong>' + tier + '</strong> queue<br>'
+      result.innerHTML = 'Job submitted &mdash; <strong>' + tier + '</strong> queue<br>'
         + 'ID: <code>' + json.job_id + '</code><br><br>Checking status...';
       poll(json.job_id);
     });
