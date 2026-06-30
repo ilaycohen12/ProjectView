@@ -6,7 +6,6 @@ os.environ["DB_HOST"]     = "localhost"
 os.environ["DB_USER"]     = "test"
 os.environ["DB_PASSWORD"] = "test"
 
-import pytest
 from unittest.mock import patch, MagicMock
 
 with patch("boto3.client"):
