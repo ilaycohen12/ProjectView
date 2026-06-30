@@ -2,13 +2,14 @@ import os
 os.environ["SIGNED_QUEUE_URL"] = "https://sqs.us-east-1.amazonaws.com/123/signed"
 os.environ["FREE_QUEUE_URL"]   = "https://sqs.us-east-1.amazonaws.com/123/free"
 os.environ["S3_BUCKET"]        = "test-bucket"
-os.environ["API_KEY"]          = "test-api-key"
+os.environ["JWT_SECRET"]       = "test-secret"
 os.environ["DB_HOST"]          = "localhost"
 os.environ["DB_USER"]          = "test"
 os.environ["DB_PASSWORD"]      = "test"
 
 import pytest
 import io
+import jwt
 from unittest.mock import patch, MagicMock
 
 with patch("boto3.client"):
@@ -55,10 +56,11 @@ def test_convert_without_api_key_goes_to_free_queue(client):
         assert "free" in call_args.kwargs["QueueUrl"]
 
 
-def test_convert_with_valid_api_key_goes_to_signed_queue(client):
+def test_convert_with_valid_jwt_goes_to_signed_queue(client):
+    token = jwt.encode({"sub": "testuser", "tier": "signed"}, "test-secret", algorithm="HS256")
     with patch("app.s3"), patch("app.sqs") as mock_sqs:
         data = {"file": (io.BytesIO(b"fake docx"), "doc.docx")}
-        headers = {"X-API-Key": "test-api-key"}
+        headers = {"Authorization": f"Bearer {token}"}
         res = client.post("/convert", data=data,
                           content_type="multipart/form-data", headers=headers)
         assert res.status_code == 200
@@ -67,10 +69,10 @@ def test_convert_with_valid_api_key_goes_to_signed_queue(client):
         assert "signed" in call_args.kwargs["QueueUrl"]
 
 
-def test_convert_with_wrong_api_key_goes_to_free_queue(client):
+def test_convert_with_invalid_jwt_goes_to_free_queue(client):
     with patch("app.s3"), patch("app.sqs") as mock_sqs:
         data = {"file": (io.BytesIO(b"fake docx"), "doc.docx")}
-        headers = {"X-API-Key": "wrong-key"}
+        headers = {"Authorization": "Bearer not-a-real-token"}
         res = client.post("/convert", data=data,
                           content_type="multipart/form-data", headers=headers)
         assert res.json["queue"] == "free"
