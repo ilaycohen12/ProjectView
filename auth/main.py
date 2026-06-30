@@ -60,7 +60,7 @@ LOGIN_PAGE = """
   <h1>snaPDF</h1>
   <p class="sub">Sign in for priority queue access.</p>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
-  <form method="POST" action="/login">
+  <form method="POST" action="/auth/login">
     <label>Username</label>
     <input type="text" name="username" required autofocus>
     <label>Password</label>
@@ -68,7 +68,7 @@ LOGIN_PAGE = """
     <button type="submit">Sign In</button>
   </form>
   <p class="links">
-    <a href="/signup">Create an account ג†’</a>
+    <a href="/auth/signup">Create an account ג†’</a>
     &nbsp;ֲ·&nbsp;
     <a href="{{ api_url }}">Use free tier</a>
   </p>
@@ -98,7 +98,7 @@ SIGNUP_PAGE = """
   <h1>Create Account</h1>
   <p class="sub">Signed users get priority queue access.</p>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
-  <form method="POST" action="/signup">
+  <form method="POST" action="/auth/signup">
     <label>Username</label>
     <input type="text" name="username" required autofocus>
     <label>Password</label>
@@ -107,7 +107,7 @@ SIGNUP_PAGE = """
     <input type="password" name="confirm" required minlength="6">
     <button type="submit">Create Account</button>
   </form>
-  <p class="links">Already have an account? <a href="/">Sign in</a></p>
+  <p class="links">Already have an account? <a href="/auth">Sign in</a></p>
 </body>
 </html>
 """
