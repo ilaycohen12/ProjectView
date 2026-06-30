@@ -70,7 +70,7 @@ def test_convert_with_valid_jwt_goes_to_signed_queue(client):
 
 
 def test_convert_with_invalid_jwt_goes_to_free_queue(client):
-    with patch("app.s3"), patch("app.sqs") as mock_sqs:
+    with patch("app.s3"), patch("app.sqs"):
         data = {"file": (io.BytesIO(b"fake docx"), "doc.docx")}
         headers = {"Authorization": "Bearer not-a-real-token"}
         res = client.post("/convert", data=data,

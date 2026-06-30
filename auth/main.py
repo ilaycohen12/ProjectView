@@ -1,4 +1,4 @@
-import os
+﻿import os
 import datetime
 
 import bcrypt
@@ -42,7 +42,7 @@ LOGIN_PAGE = """
 <!DOCTYPE html>
 <html>
 <head>
-  <title>snaPDF — Sign In</title>
+  <title>snaPDF ג€” Sign In</title>
   <style>
     * { box-sizing: border-box; }
     body { font-family: sans-serif; max-width: 400px; margin: 100px auto; padding: 0 24px; color: #222; }
@@ -68,8 +68,8 @@ LOGIN_PAGE = """
     <button type="submit">Sign In</button>
   </form>
   <p class="links">
-    <a href="/signup">Create an account →</a>
-    &nbsp;·&nbsp;
+    <a href="/signup">Create an account ג†’</a>
+    &nbsp;ֲ·&nbsp;
     <a href="{{ api_url }}">Use free tier</a>
   </p>
 </body>
@@ -80,7 +80,7 @@ SIGNUP_PAGE = """
 <!DOCTYPE html>
 <html>
 <head>
-  <title>snaPDF — Create Account</title>
+  <title>snaPDF ג€” Create Account</title>
   <style>
     * { box-sizing: border-box; }
     body { font-family: sans-serif; max-width: 400px; margin: 100px auto; padding: 0 24px; color: #222; }
@@ -207,7 +207,7 @@ with app.app_context():
     try:
         init_db()
     except Exception:
-        pass  # DB may not be available at startup in dev — worker retries on first request
+        pass  # DB may not be available at startup in dev ג€” worker retries on first request
 
 
 if __name__ == "__main__":

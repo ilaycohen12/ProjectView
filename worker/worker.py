@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import subprocess
 import tempfile
@@ -93,7 +93,7 @@ def process(body, receipt_handle):
         print(f"[{QUEUE_TYPE}] done: {job_id}")
 
     except Exception as exc:
-        print(f"[{QUEUE_TYPE}] failed: {job_id} — {exc}")
+        print(f"[{QUEUE_TYPE}] failed: {job_id} ג€” {exc}")
         cur.execute(f"UPDATE {TABLE} SET status = 'failed' WHERE job_id = %s", (job_id,))
         conn.commit()
 
@@ -104,7 +104,7 @@ def process(body, receipt_handle):
 
 
 def poll():
-    print(f"[worker] starting — type={QUEUE_TYPE} table={TABLE}")
+    print(f"[worker] starting ג€” type={QUEUE_TYPE} table={TABLE}")
     init_db()
     while True:
         resp = sqs.receive_message(QueueUrl=QUEUE_URL, MaxNumberOfMessages=1, WaitTimeSeconds=20)
