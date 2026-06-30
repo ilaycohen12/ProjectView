@@ -53,9 +53,9 @@ jobs:
           fi
           git clone https://x-access-token:${{ secrets.GITOPS_TOKEN }}@github.com/ilaycohen12/snaPDF-gitops.git
           cd snaPDF-gitops
-          sed -i "s|tag:.*|tag: ${{ github.sha }}|g" environments/$ENV/api-values.yaml
+          sed -i "s|tag:.*|tag: ${{ github.sha }}|g" environments/$ENV/api/values.yaml
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add environments/$ENV/api-values.yaml
+          git add environments/$ENV/api/values.yaml
           git commit -m "ci: update api image tag to ${{ github.sha }} ($ENV)"
           git push

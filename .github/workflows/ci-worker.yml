@@ -53,10 +53,10 @@ jobs:
           fi
           git clone https://x-access-token:${{ secrets.GITOPS_TOKEN }}@github.com/ilaycohen12/snaPDF-gitops.git
           cd snaPDF-gitops
-          sed -i "s|tag:.*|tag: ${{ github.sha }}|g" environments/$ENV/free-worker-values.yaml
-          sed -i "s|tag:.*|tag: ${{ github.sha }}|g" environments/$ENV/signed-worker-values.yaml
+          sed -i "s|tag:.*|tag: ${{ github.sha }}|g" environments/$ENV/signed-worker/values.yaml
+          sed -i "s|tag:.*|tag: ${{ github.sha }}|g" environments/$ENV/free-worker/values.yaml
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add environments/$ENV/free-worker-values.yaml environments/$ENV/signed-worker-values.yaml
+          git add environments/$ENV/signed-worker/values.yaml environments/$ENV/free-worker/values.yaml
           git commit -m "ci: update worker image tag to ${{ github.sha }} ($ENV)"
           git push
