@@ -210,8 +210,6 @@ def job_status(job_id):
         return jsonify({"status": "done", "download_url": url})
 
     return jsonify({"status": status})
-
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
 
