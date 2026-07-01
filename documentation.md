@@ -485,6 +485,19 @@ The ESO **controller** lives in Terraform (addon). The ESO **resources** live in
 
 These are app-level config (not infra), so ArgoCD manages them. `eso-appset.yaml` generates ExternalSecret resources per environment.
 
+### ArgoCD RBAC — AppProject split (added 01/07/2026)
+
+Previously every one of the 12 Applications used ArgoCD's built-in `project: default` — completely unrestricted, no isolation between dev/staging and prod. Fixed by adding `apps/appprojects.yaml` (two `AppProject` objects) and wiring `services-appset.yaml`'s two existing generators to them:
+
+- **`non-prod`** — covers `dev` and `staging` namespaces on the local cluster, no extra restrictions, still auto-syncs exactly as before.
+- **`prod`** — covers the `production` namespace on the (future) prod cluster, with a `syncWindows` deny-rule (`manualSync: true`, effectively permanent) that blocks **all** automated syncing at the project level. This is stronger than just leaving `syncPolicy.automated` off on individual prod Applications — even if a prod values file accidentally set auto-sync, the `AppProject` itself overrides it. No prod deploy can happen without a human manually clicking Sync.
+
+There are two distinct things people call "ArgoCD RBAC": `AppProject` (restricts what a group of Applications can do — which repos, which clusters/namespaces, sync policy — enforced regardless of who's asking) and `argocd-rbac-cm` (restricts what logged-in *human users* can click, requires real user accounts/SSO to be meaningful). Only `AppProject` was implemented here — for a solo-operator project, it's the one that actually protects prod from accidents; the user-level RBAC layer only becomes meaningful once multiple real people with different trust levels are involved.
+
+**Where the split is enforced:** `apps/services-appset.yaml` already had two separate generator blocks (dev/staging vs. prod) from Phase 4 — each generator's own `template.spec.project` now points at `non-prod` or `prod` respectively, reusing that existing structure with no new mechanism needed.
+
+Verified live: `kubectl get application api-dev -n argocd -o jsonpath='{.spec.project}'` → `non-prod`; same command on `api-prod` → `prod`.
+
 ### Phase 4 Design Decisions
 
 #### Where does the root ArgoCD Application live?

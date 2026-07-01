@@ -61,6 +61,7 @@ We set up everything needed before touching any real infrastructure. Installed a
 - [x] Fixed — signed-worker stuck at 1 replica, KEDA never authenticated to AWS (wrong Helm values path + missing identityOwner + stale operator pod) ✅ 11:15 01/07/2026 (see Bug 24 in documentation.md). KEDA now genuinely scales 0→N based on real SQS queue depth.
 - [x] Fixed — worker IAM role's Terraform file didn't match its live (already-fixed) trust policy, risked silently reverting Bug 19 on next apply ✅ 14:31 01/07/2026 (see Bug 25 in documentation.md). Found during IAM/IRSA learning session, not an active failure.
 - [x] Fixed — deleted orphaned NLB + target group from pre-rename `deploy-dev.yaml` manual test deployment (billing since Phase 2, untracked by Terraform), removed the stale file from the repo ✅ 01/07/2026 (see Bug 26 in documentation.md).
+- [x] Added — ArgoCD RBAC: `non-prod`/`prod` AppProjects, prod restricted to manual-sync-only via syncWindows, wired into existing services-appset.yaml generator split ✅ 01/07/2026 (see documentation.md "ArgoCD RBAC — AppProject split"). Closes snaPDF-gitops issue #1.
 - [ ] Step 11 — Apply prod infra: terragrunt run-all apply in environments/prod
 - [ ] Step 12 — Register prod cluster with ArgoCD: argocd cluster add
 - [ ] Step 13 — Configure ArgoCD webhook — instant sync on snaPDF-gitops push
