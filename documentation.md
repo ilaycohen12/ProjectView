@@ -925,6 +925,13 @@ Both dev and staging environments use the same nginx ingress controller. Since b
 ### ConfigMap added to the generic chart (01/07/2026)
 Requirements doc (section 6) lists `ConfigMap` as one of the chart's minimum required resources — previously missing. Added `templates/configmap.yaml` (renders `.Values.env` into a real ConfigMap, only if non-empty), and switched `deployment.yaml`'s plain env vars from an inline `env:` block to `envFrom: - configMapRef:` — same pattern already used for the ExternalSecret's `envFrom: - secretRef:`. Verified live: all 4 dev services (`api-dev`, `auth-dev`, `free-worker-dev`, `signed-worker-dev`) got a matching `-config` ConfigMap, and pods correctly received their env vars through it after a rollout. Closes snaPDF-gitops issue #5.
 
+### Namespace rename: `prod` → `production` (01/07/2026)
+Requirements doc (4.2) names the prod namespace explicitly as `production`, not `prod`. Fixed by renaming `snaPDF-gitops/environments/prod/` → `environments/production/` — since `services-appset.yaml`'s ApplicationSet derives both the Application name and the target namespace directly from the folder path (`{{path[1]}}`), this alone changed the generated namespace with zero ApplicationSet code changes (just updated the generator's `directories.path` from `environments/prod/*` to `environments/production/*` to match).
+
+**Hidden dependency found and fixed:** all 3 CI workflows (`ci-api.yml`, `ci-auth.yml`, `ci-worker.yml`) hardcode `ENV="prod"` when building the path `environments/$ENV/...` for the gitops handoff step. Left unfixed, every prod-branch pipeline run would have silently written to a `environments/prod/` folder that no longer existed (or worse, recreated it, causing two parallel, diverging environments). Updated all 3 to `ENV="production"`. The git branch itself (`prod`) was deliberately left unchanged — the spec only names the *namespace*, not the branch, and renaming a long-lived branch is a bigger, unrelated disruption.
+
+Verified live: old `api-prod`/`auth-prod`/`free-worker-prod`/`signed-worker-prod` Applications were pruned automatically, replaced by `api-production`/`auth-production`/`free-worker-production`/`signed-worker-production`, each correctly targeting the `production` namespace and the `prod` AppProject. Closes snaPDF-gitops issue #2.
+
 ### Bug 5 — IAM applied before SQS and S3
 - **Error:** `Unknown variable` on `dependency.sqs.outputs.signed_queue_arn` in `dev/iam/terragrunt.hcl`
 - **Cause:** The IAM module references SQS and S3 dependency outputs. When those modules haven't been applied yet, their state files don't exist in S3, so Terragrunt can't resolve the outputs.
