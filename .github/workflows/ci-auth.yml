@@ -49,7 +49,7 @@ jobs:
           BRANCH=${{ github.ref_name }}
           if [ "$BRANCH" = "main" ]; then ENV="dev"
           elif [ "$BRANCH" = "staging" ]; then ENV="staging"
-          else ENV="prod"
+          else ENV="production"
           fi
           git clone https://x-access-token:${{ secrets.GITOPS_TOKEN }}@github.com/ilaycohen12/snaPDF-gitops.git
           cd snaPDF-gitops
