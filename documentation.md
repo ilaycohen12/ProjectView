@@ -603,6 +603,57 @@ New pods roll out in dev cluster
 ```
 No manual `kubectl` in production. Git is the single source of truth.
 
+### Full Bootstrap-to-Pod Flow (detailed — how the ApplicationSets themselves get applied)
+
+The flow above skips one layer: how do `services-appset.yaml` and `eso-appset.yaml` themselves ever get onto the cluster in the first place? Nothing auto-applies them until ArgoCD exists and knows to watch for them — a genuine chicken-and-egg problem. Here's the full chain, one layer at a time:
+
+```
+STEP 0 — ONE TIME ONLY, manual, from the infra repo
+────────────────────────────────────────────────────
+  you run: kubectl apply -f infra/bootstrap/root-app.yaml
+      ↓
+  creates ArgoCD Application "root"
+  "root" is told: watch folder apps/ in the gitops repo, forever
+
+
+STEP 1 — "root" auto-syncs, creates the 2 factories
+────────────────────────────────────────────────────
+  root Application
+      ↓ applies apps/services-appset.yaml
+          → generates 12 Applications (4 services × 3 envs)
+      ↓ applies apps/eso-appset.yaml
+          → generates 1 ClusterSecretStore deployment per registered cluster
+          (currently 1 — "eso-in-cluster" — since only the local cluster is
+           registered with ArgoCD; a 2nd will appear automatically the moment
+           prod is registered via `argocd cluster add`, no code change needed)
+
+
+STEP 2 — each of the 12 Applications renders itself
+────────────────────────────────────────────────────
+  one Application, e.g. "api-dev"
+      ↓ takes the shared blueprint:  charts/service/templates/*.yaml
+      ↓ fills it in with:           environments/dev/api/values.yaml
+      ↓ produces real objects, applies them into the "dev" namespace
+
+
+STEP 3 — those objects reach out to AWS resources built elsewhere
+────────────────────────────────────────────────────
+  Deployment's image tag        ──▶  built + pushed by the snaPDF (app) repo's CI
+  ServiceAccount's role-arn     ──▶  created by ProjectView-infra, "iam" module
+  ScaledObject's queue URL      ──▶  created by ProjectView-infra, "sqs" module
+  ExternalSecret's secret key   ──▶  exists in AWS Secrets Manager (referenced, not created, by either repo)
+```
+
+Each step only exists because the step above it created it — nothing skips a layer. **Step 0 is the only manual step in this entire system** — see "Automating the root bootstrap" below for how to remove even that.
+
+### Automating the root bootstrap (removing Step 0's manual `kubectl apply`)
+
+Today, standing up a brand-new cluster (e.g. prod) requires remembering to run `kubectl apply -f infra/bootstrap/root-app.yaml` by hand after Terraform finishes — everything after that point is automatic, but that one step isn't.
+
+**The fix:** add a `kubernetes_manifest` resource to the `addons` Terraform module that applies `root-app.yaml`'s content directly, with `depends_on = [helm_release.argocd]` so it only runs once ArgoCD's CRDs actually exist. This makes `terragrunt apply` alone fully stand up a working GitOps loop — no manual step, ever, including for prod.
+
+**The tradeoff:** this slightly blurs the project's clean rule ("Terraform owns the cluster, ArgoCD owns the apps") since Terraform would now be creating one ArgoCD-level object directly. This is a widely-accepted exception specifically for bootstrapping — not something to generalize to other ArgoCD objects. Not yet implemented as of 01/07/2026 — worth doing before the prod apply (Phase 4 Step 11), so that step doesn't require a manual follow-up.
+
 ---
 
 ## Secrets
@@ -811,6 +862,38 @@ Both dev and staging environments use the same nginx ingress controller. Since b
 - **Cause:** Python source files (app.py, main.py) had curly/smart quotes (`"` `"` `'` `'`) and a UTF-8 BOM, likely introduced by a text editor or copy-paste. Python itself was fine (curly quotes are valid inside string literals), but the quotes were embedded in JavaScript code inside the HTML template strings. Browsers parse JS strictly — curly single quotes are not valid string delimiters in JavaScript, causing a SyntaxError that silently killed the entire script block.
 - **Fix:** Wrote a Python script to replace all curly quotes with straight ASCII equivalents, removed the BOM, and replaced any broken f-strings that had their `?` characters eaten by the replacement.
 - **Lesson:** Always use ASCII straight quotes in code. Smart quotes look identical in most editors but break parsers. Add `<meta charset="UTF-8">` to all HTML pages to ensure the browser interprets the encoding correctly.
+
+### Bug 23 — ArgoCD Services missing after being deployed (Terraform state showed no drift)
+- **Error:** Every ArgoCD Application showed `SYNC: Unknown`, `root` app was `Degraded`. Digging into the `root` app's status showed: `dial tcp: lookup argocd-repo-server on 172.20.0.10:53: no such host`.
+- **Cause:** `kubectl get svc -n argocd` returned zero Services, even though all 7 ArgoCD pods (server, repo-server, redis, dex, controller, applicationset-controller, notifications-controller) were `Running`. A Kubernetes Service is what gives a pod a stable DNS name (`argocd-repo-server`) — without it, other pods can't find it, hence the DNS lookup failure. The Helm release itself (`helm list -n argocd` → `argocd`, `deployed`, revision 1) looked completely healthy — Terraform's `helm_release` resource only tracks the release metadata (chart, version, values), not the individual Kubernetes objects (Services, Deployments) that the chart creates. So the 5 Services had been deleted from the cluster by something outside Terraform/Helm's knowledge, but neither Terraform nor Helm had any record of it — `terraform plan` showed **zero drift** because it never compares live cluster objects, only its own release bookkeeping.
+- **Fix:** Since Terraform can't detect or repair drift inside a Helm release's child objects, the fix was to force Terraform to fully replace the resource: `terragrunt apply -replace=helm_release.argocd` (run from `infra/environments/dev/addons`). This runs `helm uninstall` (removing all stale/broken objects) followed by a fresh `helm install`, recreating all 5 Services correctly. Confirmed fixed: `kubectl get svc -n argocd` showed all 5 Services back, and all ArgoCD Applications returned to `Synced`/`Healthy` within a minute.
+- **Why this didn't touch the app:** `helm_release.argocd` only manages resources in the `argocd` namespace (the control plane). The actual app Deployments in `dev`/`staging` namespaces are plain Kubernetes objects that ArgoCD had already applied in a previous sync — they kept running the whole time, completely independent of whether ArgoCD's own pods were healthy.
+- **Why the CRDs survived:** `helm uninstall` printed a warning that it kept `applications.argoproj.io`, `applicationsets.argoproj.io`, and `appprojects.argoproj.io` CRDs "due to the resource policy" — Helm never deletes CRDs on uninstall by default, specifically to avoid deleting all custom resources (like every ArgoCD Application) that depend on them.
+- **Lesson:** `terraform plan`/`apply` cannot detect drift in the individual Kubernetes objects that a `helm_release` resource creates — it only diffs release metadata (chart version, values). If something deletes a resource from inside a Helm release out-of-band, the only reliable Terraform-native fix is `-replace` on that `helm_release` resource, which forces a clean `helm uninstall` + `helm install`.
+
+### Bug 24 — KEDA never actually authenticated to AWS (signed-worker stuck at 1 replica, ignoring 0-3 range)
+- **Symptom:** `signed-worker-dev` always showed exactly 1 running pod, even with an empty queue and zero conversions requested — completely ignoring the ScaledObject's `minReplicaCount: 0`.
+- **Root cause, part 1 (Terraform → wrong values path):** `infra/modules/addons/main.tf` set the keda `helm_release` with:
+  ```
+  set { name = "serviceAccount.operator.annotations.eks\\.amazonaws\\.com/role-arn" ... }
+  ```
+  This key doesn't exist anywhere in the actual `kedacore/keda` chart schema (confirmed by pulling the chart source: `helm pull kedacore/keda --version 2.13.1 --untar`). Helm's `set` never validates against a schema — an unrecognized key is silently accepted and simply never read by any template, so it does nothing. The chart's real path for AWS IRSA (confirmed in `templates/serviceaccount.yaml`) is `podIdentity.aws.irsa.enabled: true` + `podIdentity.aws.irsa.roleArn: <arn>`. Result: the `keda-operator` ServiceAccount had zero IAM role annotation since the day this addon was first installed — nobody noticed because KEDA's own aws-sqs-queue scaler failure just quietly kept the Deployment at whatever `replicas` count was already there (1), instead of erroring loudly in a way that showed up anywhere but `kubectl describe scaledobject` events.
+- **Root cause, part 2 (missing `identityOwner`):** Even with IAM fixed, `charts/service/templates/scaledobject.yaml` (in `snaPDF-gitops`) never set `identityOwner` on the trigger. KEDA's `aws-sqs-queue` scaler defaults to `identityOwner: pod`, meaning it authenticates using the *scaled workload's own* pod identity (`signed-worker-dev-sa`, the broad `snapdf-dev-worker` role) — not the deliberately narrow, read-only `snapdf-dev-keda` role your IAM module created specifically for queue-depth metrics. Added `identityOwner: operator` to the trigger metadata so KEDA explicitly uses the operator's own identity — matching the original least-privilege design (a scoped role for metrics, a separate broader role for actual job processing).
+- **Root cause, part 3 (stale pod, easy to miss):** After fixing both of the above, the ScaledObject still failed — this time with `AccessDenied ... assumed-role/snapdf-dev-nodes-eks-node-group-...` (the raw EC2 node role, not KEDA's IRSA role at all). IRSA works via a mutating admission webhook that injects `AWS_ROLE_ARN` + a projected token volume into a pod **only at pod-creation time**. The `keda-operator` pod had been running for 12 hours, since before its ServiceAccount had any role annotation — so it never got those credentials injected, and its AWS SDK silently fell back to the EC2 instance's own node role (which has no SQS permissions at all). Fix: `kubectl rollout restart deployment keda-operator -n keda` to force a fresh pod, which then correctly picked up `AWS_ROLE_ARN=arn:aws:iam::086241318869:role/snapdf-dev-keda` in its container spec.
+- **Fix summary:**
+  1. `infra/modules/addons/main.tf` — replaced the dead `serviceAccount.operator.annotations...` set block with `podIdentity.aws.irsa.enabled` + `podIdentity.aws.irsa.roleArn`, applied via `terragrunt apply` (clean in-place `helm upgrade`, confirmed via `terragrunt plan` first — 0 to add, 1 to change, 0 to destroy).
+  2. `snaPDF-gitops/charts/service/templates/scaledobject.yaml` — added `identityOwner: operator`, committed and pushed; ArgoCD auto-synced within its normal 3-minute poll window.
+  3. Restarted the `keda-operator` Deployment so its pod picked up the newly-annotated ServiceAccount.
+- **Verified:** `kubectl describe scaledobject signed-worker-dev -n dev` shows `Ready: True`, `Active: False`, and a `KEDAScaleTargetDeactivated ... from 1 to 0` event — `signed-worker-dev` is now genuinely absent from `kubectl get pods -n dev` at idle, scaling 0→N only when the signed SQS queue actually has messages.
+- **Lesson:** Helm `set` values are not type- or schema-checked — a typo'd or wrong path fails silently and looks identical to "working" until you check the actual rendered object on the cluster. And any IRSA fix that only changes a ServiceAccount's annotations requires restarting the pods that use it — the injection only happens once, at pod creation.
+
+### Bug 25 — worker IAM role's Terraform file didn't match its live trust policy (silent revert risk)
+- **Discovery context:** found while tracing IAM/IRSA for learning purposes, not from an active failure — the app was working fine at the time.
+- **Symptom:** `infra/modules/iam/main.tf`'s `aws_iam_role "worker"` still had the narrow, single-SA trust policy from before Bug 19 (`StringEquals: system:serviceaccount:dev:pdf-worker-sa` — a service account name that hasn't existed since the Phase 3 microservice split). But `aws iam get-role --role-name snapdf-dev-worker` showed the *live* role already had the correct, wider `StringLike` wildcard policy (`dev:*-worker-*`, `staging:*-worker-*`, plus explicit `api-dev-sa`/`auth-dev-sa` entries) — i.e. Bug 19's fix.
+- **Cause:** Bug 19 was fixed directly against the live role at some point (or from a version of this file that was never committed), but the fix never made it back into `main.tf`. Terraform's state and the live IAM role agreed with each other, but the file (and therefore git) disagreed with both.
+- **Why this was dangerous, not just untidy:** if `terragrunt apply` (or `run-all apply`) is ever re-run on the `iam` module — e.g. a full environment rebuild — Terraform would treat the file as the source of truth and silently **revert the live trust policy back to the old, narrow one**, breaking IRSA for `api-dev-sa`, `auth-dev-sa`, and both workers all over again, reproducing Bug 19 with no code change being the trigger.
+- **Fix:** Updated `main.tf`'s `worker` role `assume_role_policy` to use `StringLike` with the exact same wildcard/explicit-SA list already live in AWS. Verified with `terragrunt plan` → `No changes. Your infrastructure matches the configuration.` — confirms the fix only aligned the file with reality; no actual AWS resource was touched.
+- **Lesson:** a `terraform plan` showing "no changes" only proves the *file* and *live resource* agree at that moment — it says nothing about whether a fix that happened outside of a normal `apply` (console edit, one-off CLI command, or an uncommitted local change) ever made it into git. Any manual/live fix to Terraform-managed infrastructure must be mirrored back into the `.tf` file in the same sitting, or it becomes a landmine for the next `apply`.
 
 ### Bug 5 — IAM applied before SQS and S3
 - **Error:** `Unknown variable` on `dependency.sqs.outputs.signed_queue_arn` in `dev/iam/terragrunt.hcl`

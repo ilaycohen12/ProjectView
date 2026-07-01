@@ -4,10 +4,11 @@
 Build a production-grade cloud infrastructure for a DevOps job interview assessment.
 Demonstrate proficiency in IaC, Kubernetes, GitOps, CI/CD, and secrets management.
 
-## Current State (v0.1.0)
-- Phase 0 and Phase 1 complete — all infrastructure deployed in dev
-- Hello World Flask app deployed to EKS and accessible via ALB in browser
-- Next: Phase 2 — full Flask PDF app + workers + GitHub Actions CI
+## Current State (v0.5.0)
+- Phases 0-3 complete, Phase 4 dev environment fully hardened and verified:
+  full PDF converter app, 3-workflow CI, GitOps via ArgoCD, KEDA genuinely
+  autoscaling signed-worker 0→N off real SQS depth, IAM/ArgoCD drift resolved
+- Next: Phase 4 remaining (prod apply + register + webhook) → v0.6.0
 
 ## Three Repos
 - **snaPDF** — Flask app code, Dockerfile, CI pipeline, docs (this repo)
@@ -40,9 +41,24 @@ Demonstrate proficiency in IaC, Kubernetes, GitOps, CI/CD, and secrets managemen
 - **KEDA** — event-driven autoscaler watching SQS
 
 ## Versioning
-Tags follow `vMAJOR.MINOR.PATCH`. Current: `v0.1.0` (Hello World deployed).
-`v1.0.0` = fully working PDF app with CI/CD and GitOps end to end.
-Tell the user when a version is tagged.
+Tags follow `vMAJOR.MINOR.PATCH`, on the `snaPDF` app repo only (never on infra/gitops repos).
+Each `v0.x.0` = one major phase/milestone genuinely complete and verified — not just code written.
+
+| Tag | Milestone |
+|---|---|
+| v0.1.0 | Phase 0+1 — bootstrap + all infra modules deployed |
+| v0.2.0 | Phase 2 — full PDF converter app + CI pipeline |
+| v0.3.0 | Phase 3 — Helm chart + CI restructure + GitOps handoff |
+| v0.4.0 | Phase 4 dev — ArgoCD wired, initial end-to-end flow verified (30/06/2026) |
+| v0.5.0 | Phase 4 dev hardened — KEDA genuinely autoscaling (Bug 24), ArgoCD service drift fixed (Bug 23), IAM file/live drift fixed (Bug 25) — same app commit as v0.4.0, but the surrounding infra/gitops state is now actually solid, not just "looked working" |
+| v0.6.0 | Prod environment fully up (Phase 4 100% complete — steps 11-13) |
+| v0.7.0 | Karpenter (Phase 6) done |
+| v0.8.0 | Observability / Grafana (Phase 5) done |
+| v1.0.0 | **Final release** — all tests passing + README finalized + applied — redefined 01/07/2026 |
+
+**Patch versions track in-progress work within the current phase** — e.g. once at v0.5.0, incremental changes while building toward prod (v0.6.0) get tagged v0.5.1, v0.5.2, etc. Once the next milestone (v0.6.0) is actually reached, jump straight to it — patch numbers reset per minor version, they don't count up forever.
+
+Proactively suggest tagging (and update this table) whenever a phase milestone or a meaningful in-phase change is reached — don't wait to be asked.
 
 ## Shutdown / Startup
 
