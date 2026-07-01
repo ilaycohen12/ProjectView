@@ -4,6 +4,16 @@ New technologies and concepts get added here the first time they come up, in pla
 
 ---
 
+## Why new cluster-scoped objects go in the gitops repo's `apps/` folder
+
+`apps/` isn't just "where ApplicationSets live" — it's specifically the one folder the `root` Application (`infra/bootstrap/root-app.yaml`) watches (`spec.source.path: apps`), applying anything found there straight into the `argocd` namespace, automatically, because `root`'s `syncPolicy` is `automated`.
+
+This means **any** valid Kubernetes object dropped into `apps/` gets auto-applied for free — it doesn't have to be an ApplicationSet specifically. When adding the `non-prod`/`prod` `AppProject` objects (01/07/2026), they went into `apps/appprojects.yaml` for exactly this reason: `AppProject`s must live in the `argocd` namespace to work, and `apps/` was already the one folder wired to land things there automatically, with zero new plumbing (no new ApplicationSet, no manual `kubectl apply`).
+
+Contrast with `bootstrap/` — that folder is *not* watched by anything on its own. `bootstrap/eso/clustersecretstore.yaml` only gets applied because `eso-appset.yaml` (itself sitting in `apps/`) explicitly points its generator at `bootstrap/eso`. Without that generator, nothing in `bootstrap/` would ever reach the cluster automatically.
+
+**The rule:** if something needs to land in the `argocd` namespace with zero extra setup, put it in `apps/`. If it needs to land somewhere else, it needs its own ApplicationSet (or to be referenced by an existing one) pointing at wherever it actually lives.
+
 ## Terraform `helm_release` only tracks release metadata, not child objects
 When Terraform creates a `helm_release` resource, it's really just calling `helm install` under the hood and remembering the Helm release name, chart, version, and values it used. It does **not** keep a live inventory of every Kubernetes object (Deployment, Service, ConfigMap, etc.) that chart created. This means `terraform plan` can say "no changes" even if someone deletes one of those objects directly with `kubectl delete` — Terraform simply never looks. Contrast this with a native Terraform resource like `aws_s3_bucket`, where Terraform refreshes the *actual* AWS object's state on every plan and will show drift if you change it outside Terraform.
 
